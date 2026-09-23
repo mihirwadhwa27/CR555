@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PitFUSION - Redirecting...</title>
+    <script>
+      // GitHub Pages SPA router fallback: redirect to the repository root while preserving the hash
+      (function () {
+        var path = window.location.pathname;
+        var segments = path.split('/').filter(Boolean);
+        var isGitHubPages = window.location.hostname.endsWith('github.io');
+        var basePath = '/';
+        if (isGitHubPages && segments.length > 0) {
+          basePath = '/' + segments[0] + '/';
+        }
+        var targetHash = window.location.hash || '#dashboard';
+        window.location.replace(basePath + targetHash);
+      })();
+    </script>
+  </head>
+  <body style="background:#09090b;color:#a1a1aa;font-family:monospace;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+    <p>Redirecting to PitFUSION...</p>
+  </body>
+</html>

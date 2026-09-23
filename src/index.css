@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #101010;
+  --bg-secondary: #202020;
+  --text-foreground: #5dd62c;
+  --text-muted: #337418;
+  --accent: #f8f8f8;
+  --accent-foreground: #49bc6a;
+  --border-primary: #414141;
+  --border-secondary: #3e3e3e;
+  --color-destructive: #fa7087;
+  --font-display: 'Roboto', -apple-system, sans-serif;
+}
+
+/* Global Application Typography - Updates via Theme Editor */
+html,
+body,
+#root,
+#pitfusion-root {
+  font-family: var(--font-display) !important;
+  color: var(--text-foreground);
+  background-color: var(--bg-primary);
+}
+
+/* Universal text font cascade across all cards, buttons, badges, tables, and mono tags */
+#pitfusion-root,
+#pitfusion-root *,
+#theme-modal-card,
+#theme-modal-card * {
+  font-family: var(--font-display) !important;
+}
+
+/* Dynamic theme text color updating */
+#pitfusion-root h1:not([style*="color"]),
+#pitfusion-root h2:not([style*="color"]),
+#pitfusion-root h3:not([style*="color"]),
+#pitfusion-root h4:not([style*="color"]) {
+  color: var(--text-foreground);
+}
+
+/* Primary text classes that respond to theme foreground changes */
+#pitfusion-root .theme-dynamic-text,
+#pitfusion-root .text-white:not([class*="bg-"]):not([class*="text-red-"]):not([class*="text-blue-"]):not([class*="text-amber-"]):not([class*="text-emerald-"]):not([class*="text-rose-"]),
+#pitfusion-root .text-zinc-100:not([class*="bg-"]),
+#pitfusion-root .text-zinc-200:not([class*="bg-"]) {
+  color: var(--text-foreground);
+}
+
+/* Muted text classes that respond to theme mutedForeground changes */
+#pitfusion-root .text-zinc-400:not([class*="bg-"]),
+#pitfusion-root .text-zinc-500:not([class*="bg-"]) {
+  color: var(--text-muted);
+}
+
+html.ten-foot-display {
+  font-size: 115%;
+}
+
+/* Custom scrollbar styling for high-contrast pit visibility */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-secondary);
+}

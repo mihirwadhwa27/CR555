@@ -1,0 +1,6 @@
+{
+  "name": "PitFUSION",
+  "description": "FRC Pit Operations and Information Display Application for Team 1002 CircuitRunners",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

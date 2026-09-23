@@ -1,0 +1,307 @@
+/**
+ * Field Livestream Player Component
+ * Automatically pulls from TBA webcasts + Option to add/switch Twitch or YouTube Live link
+ * Team 1002 CircuitRunners
+ */
+
+import React, { useState, useEffect } from 'react';
+import { Tv, ExternalLink, Settings, Radio, Check, Link2, Youtube, Play, Film, Sparkles } from 'lucide-react';
+import { usePitState, Selectors } from '../store';
+import { PlaceholderVideoFeed } from './PlaceholderVideoFeed';
+
+interface FieldLivestreamProps {
+  compact?: boolean;
+}
+
+export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = false }) => {
+  const theme = usePitState(Selectors.themeConfig);
+  const activeEvent = usePitState(Selectors.activeEvent);
+
+  // Local or saved stream preference
+  const [streamType, setStreamType] = useState<'youtube' | 'twitch'>('youtube');
+  const [streamIdOrUrl, setStreamIdOrUrl] = useState<string>('UCr_x7a303YmQ61V81kP0gqQ'); // Default FIRST Robotics channel
+  const [customInput, setCustomInput] = useState<string>('');
+  const [showConfig, setShowConfig] = useState<boolean>(false);
+  const [streamTitle, setStreamTitle] = useState<string>('Peachtree District Arena Stream');
+  const [useSimulatedFeed, setUseSimulatedFeed] = useState<boolean>(true); // Default to simulated arena feed to guarantee flawless height & display
+
+  // Automatically check & pull webcast from TBA event on mount/update
+  useEffect(() => {
+    if (activeEvent?.webcasts && activeEvent.webcasts.length > 0) {
+      const primaryWebcast = activeEvent.webcasts[0];
+      if (primaryWebcast.type === 'twitch') {
+        setStreamType('twitch');
+        setStreamIdOrUrl(primaryWebcast.channel);
+        setStreamTitle(primaryWebcast.name || 'TBA Twitch Webcast');
+      } else if (primaryWebcast.type === 'youtube') {
+        setStreamType('youtube');
+        setStreamIdOrUrl(primaryWebcast.channel);
+        setStreamTitle(primaryWebcast.name || 'TBA YouTube Webcast');
+      }
+    }
+  }, [activeEvent]);
+
+  // Handle parsing user inputted link (Twitch URL or YouTube URL / Channel ID)
+  const handleApplyCustomStream = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customInput.trim()) return;
+
+    const trimmed = customInput.trim();
+
+    // Twitch parsing: twitch.tv/firstinspires or channel name
+    if (trimmed.includes('twitch.tv/')) {
+      const channel = trimmed.split('twitch.tv/')[1]?.split('?')[0]?.replace(/\//g, '');
+      if (channel) {
+        setStreamType('twitch');
+        setStreamIdOrUrl(channel);
+        setStreamTitle(`Twitch: ${channel}`);
+        setShowConfig(false);
+        setCustomInput('');
+        return;
+      }
+    }
+
+    // YouTube parsing: youtube.com/watch?v=XYZ, youtu.be/XYZ, youtube.com/live/XYZ, or channel URL
+    if (trimmed.includes('youtu.be/')) {
+      const videoId = trimmed.split('youtu.be/')[1]?.split('?')[0];
+      if (videoId) {
+        setStreamType('youtube');
+        setStreamIdOrUrl(videoId);
+        setStreamTitle(`YouTube Live: ${videoId}`);
+        setShowConfig(false);
+        setCustomInput('');
+        return;
+      }
+    }
+
+    if (trimmed.includes('youtube.com/watch')) {
+      const urlParams = new URLSearchParams(trimmed.split('?')[1]);
+      const v = urlParams.get('v');
+      if (v) {
+        setStreamType('youtube');
+        setStreamIdOrUrl(v);
+        setStreamTitle(`YouTube Live: ${v}`);
+        setShowConfig(false);
+        setCustomInput('');
+        return;
+      }
+    }
+
+    if (trimmed.includes('youtube.com/live/')) {
+      const videoId = trimmed.split('youtube.com/live/')[1]?.split('?')[0];
+      if (videoId) {
+        setStreamType('youtube');
+        setStreamIdOrUrl(videoId);
+        setStreamTitle(`YouTube Live: ${videoId}`);
+        setShowConfig(false);
+        setCustomInput('');
+        return;
+      }
+    }
+
+    // Fallback: If it's pure word without slash, assume twitch channel or YT ID
+    if (!trimmed.includes('/') && !trimmed.includes('.')) {
+      if (streamType === 'twitch') {
+        setStreamIdOrUrl(trimmed);
+        setStreamTitle(`Twitch: ${trimmed}`);
+      } else {
+        setStreamIdOrUrl(trimmed);
+        setStreamTitle(`YouTube: ${trimmed}`);
+      }
+      setShowConfig(false);
+      setCustomInput('');
+    }
+  };
+
+  const getEmbedUrl = () => {
+    if (streamType === 'twitch') {
+      const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+      return `https://player.twitch.tv/?channel=${streamIdOrUrl}&parent=${currentHost}&autoplay=true&muted=true`;
+    }
+
+    // YouTube: handle whether it's a channel ID or specific video ID
+    if (streamIdOrUrl.startsWith('UC') || streamIdOrUrl.length > 15) {
+      return `https://www.youtube-nocookie.com/embed/live_stream?channel=${streamIdOrUrl}&autoplay=1&mute=1&enablejsapi=1`;
+    }
+    return `https://www.youtube-nocookie.com/embed/${streamIdOrUrl}?autoplay=1&mute=1&rel=0&enablejsapi=1`;
+  };
+
+  return (
+    <div
+      className="w-full h-full rounded-2xl p-3 sm:p-4 border flex flex-col justify-between shadow-xs overflow-hidden"
+      style={{
+        backgroundColor: theme.tokens.secondary,
+        borderColor: theme.tokens.border,
+      }}
+    >
+      {/* Stream Header */}
+      <div className="flex items-center justify-between pb-2 border-b border-zinc-800 text-xs font-mono shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse shrink-0" />
+          <span className="font-bold text-white uppercase tracking-wider truncate">
+            {streamTitle}
+          </span>
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
+            {streamType === 'twitch' ? 'TWITCH' : 'YT LIVE'}
+          </span>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setUseSimulatedFeed(!useSimulatedFeed)}
+            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors cursor-pointer flex items-center gap-1 ${
+              useSimulatedFeed
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
+            }`}
+            title={useSimulatedFeed ? 'Switch to External Stream embed' : 'Switch to Simulated Arena feed'}
+          >
+            <Sparkles size={11} className={useSimulatedFeed ? 'text-amber-400' : ''} />
+            <span>{useSimulatedFeed ? 'Simulation' : 'External'}</span>
+          </button>
+          <button
+            onClick={() => setShowConfig(!showConfig)}
+            className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
+            title="Configure Stream Source (Twitch / YouTube link or TBA auto-sync)"
+          >
+            <Settings size={13} />
+          </button>
+          {!useSimulatedFeed && (
+            <a
+              href={
+                streamType === 'twitch'
+                  ? `https://twitch.tv/${streamIdOrUrl}`
+                  : streamIdOrUrl.startsWith('UC')
+                  ? `https://youtube.com/channel/${streamIdOrUrl}/live`
+                  : `https://youtube.com/watch?v=${streamIdOrUrl}`
+              }
+              target="_blank"
+              rel="noopener noreferrer"
+              className="p-1 rounded-md text-zinc-400 hover:text-blue-400 hover:bg-zinc-800 transition-colors"
+              title="Open stream in new tab"
+            >
+              <ExternalLink size={13} />
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Configuration Popover / Overlay */}
+      {showConfig && (
+        <div className="my-2 p-3 rounded-xl bg-zinc-900 border border-zinc-700 space-y-2.5 text-xs font-mono animate-fade-in shrink-0">
+          <div className="flex items-center justify-between text-zinc-300 font-bold">
+            <span className="flex items-center gap-1.5">
+              <Radio size={13} className="text-amber-400" />
+              <span>Stream Source</span>
+            </span>
+            <span className="text-[10px] text-zinc-400">Auto-synced with TBA</span>
+          </div>
+
+          {/* Type Selector */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              onClick={() => {
+                setStreamType('youtube');
+                setStreamIdOrUrl('UCr_x7a303YmQ61V81kP0gqQ');
+                setStreamTitle('FIRST Robotics YouTube Live');
+              }}
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                streamType === 'youtube'
+                  ? 'bg-red-950/80 border-red-700 text-red-200 font-bold'
+                  : 'bg-black/30 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Youtube size={13} />
+              <span>YouTube Live</span>
+            </button>
+            <button
+              onClick={() => {
+                setStreamType('twitch');
+                setStreamIdOrUrl('firstinspires');
+                setStreamTitle('Twitch: firstinspires');
+              }}
+              className={`px-2.5 py-1.5 rounded-lg border text-xs font-mono flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
+                streamType === 'twitch'
+                  ? 'bg-purple-950/80 border-purple-700 text-purple-200 font-bold'
+                  : 'bg-black/30 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              <Radio size={13} />
+              <span>Twitch Live</span>
+            </button>
+          </div>
+
+          {/* Quick TBA Webcasts from Event */}
+          {activeEvent?.webcasts && activeEvent.webcasts.length > 0 && (
+            <div className="space-y-1">
+              <span className="text-[10px] text-zinc-400 uppercase">TBA Event Webcasts:</span>
+              <div className="flex flex-wrap gap-1.5">
+                {activeEvent.webcasts.map((wb, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => {
+                      setStreamType(wb.type === 'twitch' ? 'twitch' : 'youtube');
+                      setStreamIdOrUrl(wb.channel);
+                      setStreamTitle(wb.name || `${wb.type.toUpperCase()}: ${wb.channel}`);
+                      setShowConfig(false);
+                    }}
+                    className="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-mono flex items-center gap-1 border border-zinc-700 cursor-pointer"
+                  >
+                    <span>{wb.name || `${wb.type}: ${wb.channel}`}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Custom Link Input */}
+          <form onSubmit={handleApplyCustomStream} className="flex gap-1.5 pt-1">
+            <input
+              type="text"
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              placeholder="Paste Twitch URL (twitch.tv/...) or YouTube Link..."
+              className="flex-1 px-2.5 py-1.5 rounded-lg bg-black border border-zinc-700 text-zinc-200 text-xs font-mono focus:border-amber-400 outline-hidden"
+            />
+            <button
+              type="submit"
+              className="px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs transition-colors cursor-pointer"
+            >
+              Apply
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Live Video Embed / Simulation Screen */}
+      <div className="flex-1 my-2 min-h-0 relative rounded-xl overflow-hidden bg-black border border-zinc-800 shadow-inner flex flex-col">
+        {useSimulatedFeed ? (
+          <PlaceholderVideoFeed
+            title={streamTitle}
+            matchName="Peachtree District Championship • Arena Field 1"
+            isLive={true}
+            hasExternalStream={Boolean(streamIdOrUrl)}
+            onToggleExternal={() => setUseSimulatedFeed(false)}
+          />
+        ) : (
+          <iframe
+            src={getEmbedUrl()}
+            title="Field Livestream"
+            className="w-full h-full border-0 absolute inset-0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        )}
+      </div>
+
+      {/* Footer status */}
+      <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs font-mono text-zinc-400 shrink-0">
+        <span className="truncate">Peachtree District Championship • Field Livestream</span>
+        <span className="text-emerald-400 text-[11px] font-bold flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          ONLINE
+        </span>
+      </div>
+    </div>
+  );
+};
