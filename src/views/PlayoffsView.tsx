@@ -74,7 +74,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: 558,
     blueScore: 273,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 540, blue: 290, winProb: 98 },
   },
   {
@@ -89,7 +88,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: 328,
     blueScore: 288,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 335, blue: 280, winProb: 65 },
   },
   {
@@ -104,7 +102,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: 470,
     blueScore: 333,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 460, blue: 340, winProb: 88 },
   },
   {
@@ -119,7 +116,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: 305,
     blueScore: 199,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 310, blue: 210, winProb: 79 },
   },
   {
@@ -134,7 +130,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: 563,
     blueScore: 342,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 550, blue: 335, winProb: 94 },
   },
   {
@@ -149,7 +144,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: 411,
     blueScore: 388,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 440, blue: 390, winProb: 68 },
   },
   {
@@ -164,7 +158,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: 648,
     blueScore: 358,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 580, blue: 450, winProb: 82 },
   },
   {
@@ -179,8 +172,6 @@ export const UPPER_MATCHES: BracketMatch[] = [
     redScore: [557, 529],
     blueScore: [227, 224],
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
-    videoYoutubeId2: 'dQw4w9WgXcQ',
     epaPred: { red: 560, blue: 420, winProb: 85 },
   },
 ];
@@ -198,7 +189,6 @@ export const LOWER_MATCHES: BracketMatch[] = [
     redScore: 198,
     blueScore: 285,
     winner: 'BLUE',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 210, blue: 275, winProb: 32 },
   },
   {
@@ -213,7 +203,6 @@ export const LOWER_MATCHES: BracketMatch[] = [
     redScore: 324,
     blueScore: 221,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 320, blue: 230, winProb: 81 },
   },
   {
@@ -228,7 +217,6 @@ export const LOWER_MATCHES: BracketMatch[] = [
     redScore: 388,
     blueScore: 310,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 395, blue: 315, winProb: 74 },
   },
   {
@@ -243,7 +231,6 @@ export const LOWER_MATCHES: BracketMatch[] = [
     redScore: 402,
     blueScore: 341,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 410, blue: 335, winProb: 77 },
   },
   {
@@ -258,7 +245,6 @@ export const LOWER_MATCHES: BracketMatch[] = [
     redScore: 372,
     blueScore: 440,
     winner: 'BLUE',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 380, blue: 435, winProb: 38 },
   },
   {
@@ -273,7 +259,6 @@ export const LOWER_MATCHES: BracketMatch[] = [
     redScore: 491,
     blueScore: 396,
     winner: 'RED',
-    videoYoutubeId: 'dQw4w9WgXcQ',
     epaPred: { red: 455, blue: 350, winProb: 78 },
   },
 ];
@@ -335,7 +320,7 @@ export const PlayoffsView: React.FC = () => {
     const vid = videoId || match.videoYoutubeId;
     if (vid) {
       Actions.playVideo(vid, `${match.name} - ${activeEvent?.name || 'Peachtree'}`);
-      Actions.navigate('watch');
+      Actions.navigate('schedule');
     }
   };
 

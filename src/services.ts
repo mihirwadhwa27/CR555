@@ -410,7 +410,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: 'blue',
     status: 'COMPLETED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
   {
     key: '2026gacmp_qm24',
@@ -430,7 +430,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: null,
     status: 'SCHEDULED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
   {
     key: '2026gacmp_qm30',
@@ -550,7 +550,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: 'red',
     status: 'COMPLETED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
   {
     key: '2026gacmp_sf8m1',
@@ -571,7 +571,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: 'red',
     status: 'COMPLETED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
   {
     key: '2026gacmp_sf11m1',
@@ -592,7 +592,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: 'red',
     status: 'COMPLETED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
   {
     key: '2026gacmp_sf13m1',
@@ -613,7 +613,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: 'red',
     status: 'COMPLETED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
   {
     key: '2026gacmp_f1m1',
@@ -634,7 +634,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: 'red',
     status: 'COMPLETED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
   {
     key: '2026gacmp_f1m2',
@@ -655,7 +655,7 @@ export const SAMPLE_1002_MATCHES: MatchModel[] = [
     },
     winner: 'red',
     status: 'COMPLETED',
-    videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+    videos: [],
   },
 ];
 
@@ -1604,7 +1604,7 @@ export class TbaService {
         },
         winner: 'blue',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_qm12`,
@@ -1721,7 +1721,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_sf2m1`,
@@ -1741,7 +1741,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_sf3m1`,
@@ -1761,7 +1761,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_sf4m1`,
@@ -1781,7 +1781,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_sf7m1`,
@@ -1801,7 +1801,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_sf8m1`,
@@ -1821,7 +1821,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_sf11m1`,
@@ -1841,7 +1841,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_sf13m1`,
@@ -1861,7 +1861,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_f1m1`,
@@ -1881,7 +1881,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
       {
         key: `${eventKey}_f1m2`,
@@ -1901,7 +1901,7 @@ export class TbaService {
         },
         winner: 'red',
         status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'dQw4w9WgXcQ' }],
+        videos: [],
       },
     ];
 

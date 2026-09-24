@@ -105,9 +105,9 @@ export const ThemeModal: React.FC = () => {
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                PitFUSION Theme Studio
-                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700">
-                  FRC 1002
+                CR555 Theme Studio
+                <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                  Team Presets
                 </span>
               </h2>
               <p className="text-xs text-zinc-400">

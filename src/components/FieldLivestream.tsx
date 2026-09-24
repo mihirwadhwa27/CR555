@@ -1,13 +1,13 @@
 /**
  * Field Livestream Player Component
- * Automatically pulls from TBA webcasts + Option to add/switch Twitch or YouTube Live link
+ * Automatically pulls from TBA webcasts + Option to add/switch YouTube Live or Twitch link
+ * Defaults to YouTube Live for official FRC streams
  * Team 1002 CircuitRunners
  */
 
 import React, { useState, useEffect } from 'react';
-import { Tv, ExternalLink, Settings, Radio, Check, Link2, Youtube, Play, Film, Sparkles } from 'lucide-react';
+import { Tv, ExternalLink, Settings, Radio, Check, Link2, Youtube, Play, Film, RefreshCw } from 'lucide-react';
 import { usePitState, Selectors } from '../store';
-import { PlaceholderVideoFeed } from './PlaceholderVideoFeed';
 
 interface FieldLivestreamProps {
   compact?: boolean;
@@ -17,31 +17,38 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
   const theme = usePitState(Selectors.themeConfig);
   const activeEvent = usePitState(Selectors.activeEvent);
 
-  // Local or saved stream preference
+  // Default to YouTube Live
   const [streamType, setStreamType] = useState<'youtube' | 'twitch'>('youtube');
-  const [streamIdOrUrl, setStreamIdOrUrl] = useState<string>('UCr_x7a303YmQ61V81kP0gqQ'); // Default FIRST Robotics channel
+  const [streamIdOrUrl, setStreamIdOrUrl] = useState<string>('UCr_x7a303YmQ61V81kP0gqQ'); // Official FIRST Robotics channel
   const [customInput, setCustomInput] = useState<string>('');
   const [showConfig, setShowConfig] = useState<boolean>(false);
   const [streamTitle, setStreamTitle] = useState<string>(
-    activeEvent?.name ? `${activeEvent.name} Arena Stream` : 'Arena Field Stream'
+    activeEvent?.name ? `${activeEvent.name} • YouTube Live` : 'FRC Arena Field • YouTube Live'
   );
-  const [useSimulatedFeed, setUseSimulatedFeed] = useState<boolean>(true); // Default to simulated arena feed to guarantee flawless height & display
 
-  // Automatically check & pull webcast from TBA event on mount/update
+  // Automatically check & pull webcast from TBA event on mount/update (prioritize YouTube)
   useEffect(() => {
     if (activeEvent?.webcasts && activeEvent.webcasts.length > 0) {
-      const primaryWebcast = activeEvent.webcasts[0];
-      if (primaryWebcast.type === 'twitch') {
-        setStreamType('twitch');
-        setStreamIdOrUrl(primaryWebcast.channel);
-        setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} Twitch Webcast`);
-      } else if (primaryWebcast.type === 'youtube') {
+      // Look for YouTube stream first
+      const ytWebcast = activeEvent.webcasts.find((w) => w.type === 'youtube');
+      if (ytWebcast) {
         setStreamType('youtube');
-        setStreamIdOrUrl(primaryWebcast.channel);
-        setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} YouTube Webcast`);
+        setStreamIdOrUrl(ytWebcast.channel);
+        setStreamTitle(ytWebcast.name || `${activeEvent.shortName || activeEvent.name} YouTube Live`);
+      } else {
+        const primaryWebcast = activeEvent.webcasts[0];
+        if (primaryWebcast.type === 'twitch') {
+          setStreamType('twitch');
+          setStreamIdOrUrl(primaryWebcast.channel);
+          setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} Twitch Live`);
+        } else {
+          setStreamType('youtube');
+          setStreamIdOrUrl(primaryWebcast.channel);
+          setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} Live Stream`);
+        }
       }
     } else if (activeEvent?.name) {
-      setStreamTitle(`${activeEvent.shortName || activeEvent.name} Arena Stream`);
+      setStreamTitle(`${activeEvent.shortName || activeEvent.name} • YouTube Live`);
     }
   }, [activeEvent]);
 
@@ -51,19 +58,6 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
     if (!customInput.trim()) return;
 
     const trimmed = customInput.trim();
-
-    // Twitch parsing: twitch.tv/firstinspires or channel name
-    if (trimmed.includes('twitch.tv/')) {
-      const channel = trimmed.split('twitch.tv/')[1]?.split('?')[0]?.replace(/\//g, '');
-      if (channel) {
-        setStreamType('twitch');
-        setStreamIdOrUrl(channel);
-        setStreamTitle(`Twitch: ${channel}`);
-        setShowConfig(false);
-        setCustomInput('');
-        return;
-      }
-    }
 
     // YouTube parsing: youtube.com/watch?v=XYZ, youtu.be/XYZ, youtube.com/live/XYZ, or channel URL
     if (trimmed.includes('youtu.be/')) {
@@ -103,14 +97,39 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
       }
     }
 
-    // Fallback: If it's pure word without slash, assume twitch channel or YT ID
+    if (trimmed.includes('youtube.com/channel/')) {
+      const channelId = trimmed.split('youtube.com/channel/')[1]?.split('/')[0]?.split('?')[0];
+      if (channelId) {
+        setStreamType('youtube');
+        setStreamIdOrUrl(channelId);
+        setStreamTitle(`YouTube Channel Live: ${channelId}`);
+        setShowConfig(false);
+        setCustomInput('');
+        return;
+      }
+    }
+
+    // Twitch parsing: twitch.tv/firstinspires or channel name
+    if (trimmed.includes('twitch.tv/')) {
+      const channel = trimmed.split('twitch.tv/')[1]?.split('?')[0]?.replace(/\//g, '');
+      if (channel) {
+        setStreamType('twitch');
+        setStreamIdOrUrl(channel);
+        setStreamTitle(`Twitch: ${channel}`);
+        setShowConfig(false);
+        setCustomInput('');
+        return;
+      }
+    }
+
+    // Fallback: If it's pure word without slash, assume YT ID or twitch channel
     if (!trimmed.includes('/') && !trimmed.includes('.')) {
       if (streamType === 'twitch') {
         setStreamIdOrUrl(trimmed);
         setStreamTitle(`Twitch: ${trimmed}`);
       } else {
         setStreamIdOrUrl(trimmed);
-        setStreamTitle(`YouTube: ${trimmed}`);
+        setStreamTitle(`YouTube Live: ${trimmed}`);
       }
       setShowConfig(false);
       setCustomInput('');
@@ -152,41 +171,27 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
 
         <div className="flex items-center gap-1.5">
           <button
-            onClick={() => setUseSimulatedFeed(!useSimulatedFeed)}
-            className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-colors cursor-pointer flex items-center gap-1 ${
-              useSimulatedFeed
-                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:text-white'
-            }`}
-            title={useSimulatedFeed ? 'Switch to External Stream embed' : 'Switch to Simulated Arena feed'}
-          >
-            <Sparkles size={11} className={useSimulatedFeed ? 'text-amber-400' : ''} />
-            <span>{useSimulatedFeed ? 'Simulation' : 'External'}</span>
-          </button>
-          <button
             onClick={() => setShowConfig(!showConfig)}
             className="p-1 rounded-md text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer"
-            title="Configure Stream Source (Twitch / YouTube link or TBA auto-sync)"
+            title="Configure Stream Source (YouTube Live / Twitch link or TBA auto-sync)"
           >
             <Settings size={13} />
           </button>
-          {!useSimulatedFeed && (
-            <a
-              href={
-                streamType === 'twitch'
-                  ? `https://twitch.tv/${streamIdOrUrl}`
-                  : streamIdOrUrl.startsWith('UC')
-                  ? `https://youtube.com/channel/${streamIdOrUrl}/live`
-                  : `https://youtube.com/watch?v=${streamIdOrUrl}`
-              }
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-1 rounded-md text-zinc-400 hover:text-blue-400 hover:bg-zinc-800 transition-colors"
-              title="Open stream in new tab"
-            >
-              <ExternalLink size={13} />
-            </a>
-          )}
+          <a
+            href={
+              streamType === 'twitch'
+                ? `https://twitch.tv/${streamIdOrUrl}`
+                : streamIdOrUrl.startsWith('UC')
+                ? `https://youtube.com/channel/${streamIdOrUrl}/live`
+                : `https://youtube.com/watch?v=${streamIdOrUrl}`
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1 rounded-md text-zinc-400 hover:text-red-400 hover:bg-zinc-800 transition-colors"
+            title="Open stream on YouTube / Twitch in new tab"
+          >
+            <ExternalLink size={13} />
+          </a>
         </div>
       </div>
 
@@ -198,7 +203,7 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
               <Radio size={13} className="text-amber-400" />
               <span>Stream Source</span>
             </span>
-            <span className="text-[10px] text-zinc-400">Auto-synced with TBA</span>
+            <span className="text-[10px] text-zinc-400">Default: YouTube Live</span>
           </div>
 
           {/* Type Selector */}
@@ -238,7 +243,7 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
           {/* Quick TBA Webcasts from Event */}
           {activeEvent?.webcasts && activeEvent.webcasts.length > 0 && (
             <div className="space-y-1">
-              <span className="text-[10px] text-zinc-400 uppercase">TBA Event Webcasts:</span>
+              <span className="text-[10px] text-zinc-400 uppercase">Event Webcasts (TBA):</span>
               <div className="flex flex-wrap gap-1.5">
                 {activeEvent.webcasts.map((wb, idx) => (
                   <button
@@ -264,7 +269,7 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
               type="text"
               value={customInput}
               onChange={(e) => setCustomInput(e.target.value)}
-              placeholder="Paste Twitch URL (twitch.tv/...) or YouTube Link..."
+              placeholder="Paste YouTube Live URL (youtube.com/...) or Twitch Link..."
               className="flex-1 px-2.5 py-1.5 rounded-lg bg-black border border-zinc-700 text-zinc-200 text-xs font-mono focus:border-amber-400 outline-hidden"
             />
             <button
@@ -277,25 +282,15 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
         </div>
       )}
 
-      {/* Live Video Embed / Simulation Screen */}
+      {/* Real Live Video Embed Screen */}
       <div className="w-full aspect-video max-h-[280px] sm:max-h-[320px] my-2 relative rounded-xl overflow-hidden bg-black border border-zinc-800 shadow-inner flex flex-col mx-auto">
-        {useSimulatedFeed ? (
-          <PlaceholderVideoFeed
-            title={streamTitle}
-            matchName={`${activeEvent?.name || activeEvent?.shortName || 'Tournament'} • Arena Field 1`}
-            isLive={true}
-            hasExternalStream={Boolean(streamIdOrUrl)}
-            onToggleExternal={() => setUseSimulatedFeed(false)}
-          />
-        ) : (
-          <iframe
-            src={getEmbedUrl()}
-            title="Field Livestream"
-            className="w-full h-full border-0 absolute inset-0 z-10"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-            allowFullScreen
-          />
-        )}
+        <iframe
+          src={getEmbedUrl()}
+          title="Field Livestream"
+          className="w-full h-full border-0 absolute inset-0 z-10"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowFullScreen
+        />
       </div>
 
       {/* Footer status */}

@@ -50,6 +50,7 @@ export function createInitialState(): ApplicationState {
     corsProxyUrl: '',
     nexusManualEventKey: '',
     theme: defaultTheme,
+    customLogoUrl: '',
   });
 
   const defaultToolLoans: ToolRecordModel[] = [
@@ -132,9 +133,9 @@ export function createInitialState(): ApplicationState {
         timezone: 'America/New_York',
         webcasts: [
           {
-            channel: 'firstinspires1',
-            type: 'twitch',
-            name: 'PCH District Championship Primary Stream',
+            channel: 'UCr_x7a303YmQ61V81kP0gqQ',
+            type: 'youtube',
+            name: 'PCH District Championship YouTube Live',
           },
         ],
       },
@@ -510,6 +511,7 @@ export const Selectors = {
   partsRequests: (s: ApplicationState) => s.activeEvent.partsRequests,
   toolLoans: (s: ApplicationState) => s.userOperations.toolLoans || [],
   playoffs: (s: ApplicationState) => s.activeEvent.playoffs,
+  customLogoUrl: (s: ApplicationState) => s.config.customLogoUrl || '',
 };
 
 // ==========================================
@@ -522,6 +524,16 @@ export const Actions = {
     if (typeof window !== 'undefined' && window.location.hash !== `#${tab}`) {
       window.location.hash = `#${tab}`;
     }
+  },
+
+  setCustomLogoUrl(url: string) {
+    pitStore.setState((s) => ({
+      ...s,
+      config: {
+        ...s.config,
+        customLogoUrl: url,
+      },
+    }));
   },
 
   setSetupModalOpen(isOpen: boolean) {
@@ -644,9 +656,9 @@ export const Actions = {
           timezone: 'America/New_York',
           webcasts: [
             {
-              channel: 'firstinspires1',
-              type: 'twitch',
-              name: 'PCH District Championship Primary Stream',
+              channel: 'UCr_x7a303YmQ61V81kP0gqQ',
+              type: 'youtube',
+              name: 'PCH District Championship YouTube Live',
             },
           ],
         },

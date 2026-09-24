@@ -1,10 +1,12 @@
 import React from 'react';
 import { Eye, Lock, ShieldCheck, UserCheck, AlertCircle } from 'lucide-react';
 import { usePitState, Selectors, Actions } from '../store';
+import { CrLogo } from '../components/CrLogo';
 
 export const ScoutView: React.FC = () => {
   const theme = usePitState(Selectors.themeConfig);
   const teamInfo = usePitState(Selectors.teamInfo);
+  const customLogoUrl = usePitState(Selectors.customLogoUrl);
 
   return (
     <div
@@ -16,10 +18,15 @@ export const ScoutView: React.FC = () => {
       }}
     >
       <div className="flex items-center justify-between pb-4 border-b border-zinc-800">
-        <div className="flex items-center gap-2">
-          <Eye size={22} style={{ color: theme.tokens.foreground }} />
+        <div className="flex items-center gap-2.5">
+          <CrLogo size={32} customUrl={customLogoUrl} accentColor={theme.tokens.accent || '#fbbf24'} />
           <div>
-            <h2 className="text-xl font-bold text-white">Private Strategy & Scouting Console</h2>
+            <h2 className="text-xl font-bold text-white font-mono flex items-center gap-2">
+              <span>Private Strategy & Scouting Console</span>
+              <span className="text-xs px-2 py-0.5 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                CR555 Restricted
+              </span>
+            </h2>
             <p className="text-xs text-zinc-400">Team 1002 Strategy Leads & Drive Coaches</p>
           </div>
         </div>

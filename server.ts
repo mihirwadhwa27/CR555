@@ -18,6 +18,16 @@ interface CacheEntry<T> {
 }
 const memoryCache = new Map<string, CacheEntry<any>>();
 
+// Prune expired entries periodically to prevent memory leaks
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of memoryCache.entries()) {
+    if (now > entry.expiresAt) {
+      memoryCache.delete(key);
+    }
+  }
+}, 600000);
+
 function getCached<T>(key: string): T | null {
   const entry = memoryCache.get(key);
   if (!entry) return null;
@@ -33,6 +43,18 @@ function setCached<T>(key: string, data: T, ttlSeconds: number = 3600): void {
     data,
     expiresAt: Date.now() + ttlSeconds * 1000,
   });
+}
+
+// Resilient fetch helper with timeout
+async function fetchWithTimeout(url: string, options: RequestInit = {}, timeoutMs: number = 6000): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
 }
 
 // Clean HTML entities helper
@@ -318,9 +340,9 @@ async function fetchEventDataFromTba(eventKey: string, apiKey?: string) {
         year,
         webcasts: [
           {
-            channel: 'firstinspires1',
-            type: 'twitch',
-            name: `${shortName} Primary Live Stream`,
+            channel: 'UCr_x7a303YmQ61V81kP0gqQ',
+            type: 'youtube',
+            name: `${shortName} YouTube Live Stream`,
           },
         ],
       };

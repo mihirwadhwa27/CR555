@@ -13,7 +13,7 @@
  * - Modular segment layout supporting custom column spans, height multipliers, collapsing, and reordering
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Calendar,
   ExternalLink,
@@ -34,6 +34,7 @@ import {
   Layers,
   Sparkles,
   Users,
+  Youtube,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { MatchModel } from '../types';
@@ -116,47 +117,56 @@ export const ScheduleView: React.FC = () => {
   }, [activeEvent.key, teamInfo.number]);
 
   // Combine store matches with live generated matches for this exact team/event
-  const rawMatches: MatchModel[] =
-    fullSchedule && fullSchedule.length > 0
+  const rawMatches: MatchModel[] = useMemo(() => {
+    return fullSchedule && fullSchedule.length > 0
       ? fullSchedule
       : TbaService.generateMatchesForTeamAndEvent(teamInfo.number, activeEvent.key);
+  }, [fullSchedule, teamInfo.number, activeEvent.key]);
 
-  const matches = sortTournamentMatches(rawMatches);
+  const matches = useMemo(() => sortTournamentMatches(rawMatches), [rawMatches]);
 
-  const teamMatches = matches.filter(
-    (m) =>
-      m.redAlliance.teams.includes(teamInfo.number) ||
-      m.blueAlliance.teams.includes(teamInfo.number)
-  );
+  const teamMatches = useMemo(() => {
+    return matches.filter(
+      (m) =>
+        m.redAlliance.teams.includes(teamInfo.number) ||
+        m.blueAlliance.teams.includes(teamInfo.number)
+    );
+  }, [matches, teamInfo.number]);
 
-  const completedWithVideos = matches.filter((m) => m.videos && m.videos.length > 0);
+  const completedWithVideos = useMemo(() => {
+    return matches.filter((m) => m.videos && m.videos.length > 0);
+  }, [matches]);
 
-  let scopeFiltered = matches;
-  if (scheduleScope === 'TEAM_ONLY') {
-    scopeFiltered = teamMatches;
-  } else if (scheduleScope === 'VIDEOS_ONLY') {
-    scopeFiltered = completedWithVideos;
-  }
+  const scopeFiltered = useMemo(() => {
+    if (scheduleScope === 'TEAM_ONLY') return teamMatches;
+    if (scheduleScope === 'VIDEOS_ONLY') return completedWithVideos;
+    return matches;
+  }, [scheduleScope, matches, teamMatches, completedWithVideos]);
 
-  const displayedMatches = scopeFiltered.filter((m) => {
-    if (!searchQuery.trim()) return true;
+  const displayedMatches = useMemo(() => {
+    if (!searchQuery.trim()) return scopeFiltered;
     const q = searchQuery.toLowerCase().trim();
-    const label = formatMatchLabel(m).toLowerCase();
-    const shortLabel = formatMatchLabel(m, true).toLowerCase();
-    const allTeams = [...m.redAlliance.teams, ...m.blueAlliance.teams].join(' ');
-    return label.includes(q) || shortLabel.includes(q) || allTeams.includes(q);
-  });
+    return scopeFiltered.filter((m) => {
+      const label = formatMatchLabel(m).toLowerCase();
+      const shortLabel = formatMatchLabel(m, true).toLowerCase();
+      const allTeams = [...m.redAlliance.teams, ...m.blueAlliance.teams].join(' ');
+      return label.includes(q) || shortLabel.includes(q) || allTeams.includes(q);
+    });
+  }, [scopeFiltered, searchQuery]);
 
   // Current active match object for the video replay player
-  const currentVideoMatch =
-    matches.find((m) => m.key === videoReplay.activeMatchKey) ||
-    completedWithVideos.find((m) => m.redAlliance.teams.includes(teamInfo.number) || m.blueAlliance.teams.includes(teamInfo.number)) ||
-    completedWithVideos[0] ||
-    matches[0];
+  const currentVideoMatch = useMemo(() => {
+    return (
+      matches.find((m) => m.key === videoReplay.activeMatchKey) ||
+      completedWithVideos.find((m) => m.redAlliance.teams.includes(teamInfo.number) || m.blueAlliance.teams.includes(teamInfo.number)) ||
+      completedWithVideos[0] ||
+      matches[0]
+    );
+  }, [matches, videoReplay.activeMatchKey, completedWithVideos, teamInfo.number]);
 
   const handleSelectReplayMatch = (m: MatchModel, jumpTime: number = 0) => {
     setVideoTimestampOffset(jumpTime);
-    const videoKey = m.videos && m.videos.length > 0 ? m.videos[0].key : 'dQw4w9WgXcQ';
+    const videoKey = m.videos && m.videos.length > 0 ? m.videos[0].key : '';
     const isBlue = m.blueAlliance.teams.includes(teamInfo.number);
     const isWinner = (isBlue && m.winner === 'blue') || (!isBlue && m.winner === 'red');
     const scoreStr = m.redAlliance.score !== null && m.blueAlliance.score !== null ? `(${isWinner ? 'W' : 'L'} ${isBlue ? m.blueAlliance.score : m.redAlliance.score} - ${isBlue ? m.redAlliance.score : m.blueAlliance.score})` : '';
@@ -197,7 +207,7 @@ export const ScheduleView: React.FC = () => {
   const completedCount = teamMatches.filter((m) => m.status === 'COMPLETED').length;
   const totalTeamMatches = teamMatches.length;
 
-  const activeVideoKey = currentVideoMatch?.videos && currentVideoMatch.videos.length > 0 ? currentVideoMatch.videos[0].key : (videoReplay.youtubeId || 'dQw4w9WgXcQ');
+  const activeVideoKey = currentVideoMatch?.videos && currentVideoMatch.videos.length > 0 ? currentVideoMatch.videos[0].key : videoReplay.youtubeId;
 
   const renderSegmentContent = (segId: string) => {
     switch (segId) {
@@ -279,9 +289,34 @@ export const ScheduleView: React.FC = () => {
                   allowFullScreen
                 />
               ) : (
-                <div className="flex flex-col items-center justify-center text-zinc-500 gap-2 p-6 text-center">
-                  <Tv size={32} className="text-zinc-600" />
-                  <p className="text-xs">No video feed or TBA YouTube recording available for this match.</p>
+                <div className="flex flex-col items-center justify-center text-zinc-400 gap-2.5 p-6 text-center">
+                  <div className="p-3 rounded-full bg-zinc-900 border border-zinc-800 text-zinc-500">
+                    <Tv size={28} />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-zinc-200">
+                      Individual Match Recording Pending TBA Archive
+                    </p>
+                    <p className="text-[11px] text-zinc-500">
+                      Match video is being processed or event is currently live.
+                    </p>
+                  </div>
+                  {activeEvent?.webcasts && activeEvent.webcasts.length > 0 && (
+                    <button
+                      onClick={() => {
+                        const yt = activeEvent.webcasts.find((w) => w.type === 'youtube') || activeEvent.webcasts[0];
+                        Actions.selectReplayMatch(
+                          currentVideoMatch ? currentVideoMatch.key : 'live',
+                          yt.channel,
+                          `${activeEvent.name || 'Event'} • YouTube Live Stream`
+                        );
+                      }}
+                      className="mt-1 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/40 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Youtube size={13} />
+                      <span>Switch to Event YouTube Live Stream</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>

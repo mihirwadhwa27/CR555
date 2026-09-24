@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { NavigationTab } from '../types';
+import { CrLogo } from './CrLogo';
 
 interface NavItem {
   id: NavigationTab;
@@ -28,7 +29,6 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'General' },
   { id: 'schedule', label: 'Schedule & Videos' },
   { id: 'playoffs', label: 'Playoffs' },
-  { id: 'previous', label: 'Event Review (TBA)' },
   { id: 'tools', label: 'Ledger' },
   { id: 'controller', label: 'Controller' },
   { id: 'scout', label: 'Strategy', isPrivate: true },
@@ -41,6 +41,7 @@ export const TopNav: React.FC = () => {
   const theme = usePitState(Selectors.themeConfig);
   const isStrategyUnlocked = usePitState(Selectors.isStrategyUnlocked);
   const demoMode = usePitState(Selectors.demoMode);
+  const customLogoUrl = usePitState(Selectors.customLogoUrl);
 
   // Live Competition / Arena Clock (with Demo Mode simulation support)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -93,31 +94,27 @@ export const TopNav: React.FC = () => {
         <div className="max-w-[1920px] mx-auto px-2.5 sm:px-5 h-13 sm:h-14 flex items-center justify-between gap-3">
           {/* Brand & Main Navigation Links */}
           <div className="flex items-center gap-3 sm:gap-6 overflow-x-auto no-scrollbar">
-            {/* Logo */}
+            {/* CR555 CircuitRunners Logo & Brand */}
             <div
-              className="flex items-center gap-2 cursor-pointer shrink-0"
+              className="flex items-center gap-2.5 cursor-pointer shrink-0 group"
               onClick={() => Actions.navigate('dashboard')}
-              title="Return to General Dashboard"
+              title="CR555 - Team 1002 CircuitRunners Pit Display"
             >
-              <div
-                className="w-7 h-7 rounded-md flex items-center justify-center font-bold text-xs"
-                style={{
-                  backgroundColor: `${theme.tokens.foreground}20`,
-                  color: theme.tokens.foreground,
-                  border: `1px solid ${theme.tokens.secondaryBorder}`,
-                }}
-              >
-                <Box size={16} />
+              <div className="relative transition-transform duration-200 group-hover:scale-105">
+                <CrLogo size={28} customUrl={customLogoUrl} accentColor={theme.tokens.accent || '#fbbf24'} />
               </div>
               <div className="leading-tight">
                 <div
-                  className="font-extrabold text-base tracking-tight"
+                  className="font-extrabold text-base tracking-tight font-mono flex items-center gap-1"
                   style={{ color: theme.tokens.foreground }}
                 >
-                  Pulse.
+                  <span>CR555</span>
+                  <span className="text-[10px] font-bold px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                    1002
+                  </span>
                 </div>
-                <div className="text-[10px] text-zinc-400 font-medium tracking-wide -mt-1">
-                  pit display
+                <div className="text-[10px] text-zinc-400 font-medium tracking-wide -mt-0.5">
+                  circuitrunners pit
                 </div>
               </div>
             </div>

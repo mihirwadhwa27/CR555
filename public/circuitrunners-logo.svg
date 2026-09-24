@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" fill="none">
+  <!-- CircuitRunners Official Running Man with Circuit Board Trail -->
+  <defs>
+    <filter id="crGlowFilter" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="6" floodColor="#1fd655" floodOpacity="0.25" />
+    </filter>
+  </defs>
+
+  <!-- Circuit Board Trail (Behind Runner) -->
+  <g stroke="#a1a1aa" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.65">
+    <!-- Trace 1 (Top Left) -->
+    <path d="M 302 386 L 275 386 L 245 432 L 205 432" />
+    <circle cx="302" cy="386" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="302" cy="386" r="5" fill="#a1a1aa" />
+    <circle cx="205" cy="432" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="205" cy="432" r="5" fill="#a1a1aa" />
+
+    <!-- Trace 2 (Middle High) -->
+    <path d="M 432 455 L 290 455 L 250 500 L 295 500" />
+    <circle cx="295" cy="500" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="295" cy="500" r="5" fill="#a1a1aa" />
+
+    <!-- Trace 3 (Middle Upper Branch) -->
+    <path d="M 425 502 L 320 502 L 252 546 L 252 546" />
+    <circle cx="252" cy="546" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="252" cy="546" r="5" fill="#a1a1aa" />
+
+    <!-- Trace 4 (Center Horizontal Long) -->
+    <path d="M 445 548 L 380 548 L 330 635 L 200 635 L 140 635" />
+    <circle cx="200" cy="580" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <path d="M 200 580 L 320 580 L 375 650 L 445 650" />
+    <circle cx="140" cy="635" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="140" cy="635" r="5" fill="#a1a1aa" />
+
+    <!-- Trace 5 (Lower Mid) -->
+    <path d="M 230 705 L 250 765 L 305 765 L 350 765" />
+    <circle cx="230" cy="705" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="230" cy="705" r="5" fill="#a1a1aa" />
+
+    <!-- Trace 6 (Bottom Traces below foot) -->
+    <path d="M 442 795 L 530 795 L 575 835 L 642 835" />
+    <circle cx="442" cy="795" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="442" cy="795" r="5" fill="#a1a1aa" />
+    <circle cx="575" cy="835" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="575" cy="835" r="5" fill="#a1a1aa" />
+
+    <path d="M 425 745 L 490 745 L 580 788 L 685 788" />
+    <circle cx="642" cy="835" r="14" fill="#090a0f" stroke="#a1a1aa" stroke-width="3" />
+    <circle cx="642" cy="835" r="5" fill="#a1a1aa" />
+  </g>
+
+  <!-- Green Running Man Silhouette (Team 1002 CircuitRunners) -->
+  <g fill="#1fd655" filter="url(#crGlowFilter)">
+    <!-- Head -->
+    <circle cx="668" cy="188" r="80" />
+
+    <!-- Body & Limbs Silhouette (Precise Vector Path) -->
+    <path d="
+      M 480 274
+      C 525 274, 600 286, 642 334
+      C 662 356, 680 392, 696 422
+      L 830 422
+      C 864 422, 888 446, 888 468
+      C 888 492, 864 515, 830 515
+      L 700 515
+      C 674 515, 650 495, 638 472
+      L 588 385
+      L 542 530
+      L 705 778
+      C 736 824, 730 864, 706 886
+      C 680 910, 642 898, 614 860
+      L 456 595
+      L 450 670
+      C 450 690, 435 706, 410 706
+      L 290 706
+      C 255 706, 235 682, 235 658
+      C 235 632, 255 610, 290 610
+      L 398 610
+      L 404 492
+      C 404 472, 414 454, 430 438
+      L 472 384
+      L 384 444
+      C 356 462, 324 455, 308 432
+      C 292 408, 300 378, 326 358
+      L 435 288
+      C 450 278, 465 274, 480 274
+      Z
+    " />
+  </g>
+</svg>

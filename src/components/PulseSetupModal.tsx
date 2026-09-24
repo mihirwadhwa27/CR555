@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { TbaService } from '../services';
+import { CrLogo } from './CrLogo';
 
 // Only Team 1002 is a preset per user instructions
 const TEAM_PRESETS = [
@@ -191,20 +192,20 @@ export const PulseSetupModal: React.FC = () => {
         {/* Header Bar */}
         <div className="p-4 sm:p-6 pb-4 border-b border-zinc-800/80 bg-zinc-900/40 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold shadow-inner">
-              <Box size={22} />
+            <div className="p-1 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shadow-inner">
+              <CrLogo size={36} customUrl={currentConfig.customLogoUrl} accentColor="#fbbf24" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-1.5">
-                  Pulse<span className="text-emerald-400">.</span>
+                <h2 className="text-xl font-black tracking-tight font-mono text-white flex items-center gap-1.5">
+                  CR555<span className="text-amber-400">.</span>
                 </h2>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700/60">
-                  Pit Display Setup
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-zinc-800 text-amber-300 border border-amber-500/30">
+                  CircuitRunners Pit Display
                 </span>
               </div>
               <p className="text-xs text-zinc-400 mt-0.5">
-                Configure your team station, tournament event, and display mode
+                555 Timer Architecture • Team 1002 Pit Operations & Telemetry
               </p>
             </div>
           </div>

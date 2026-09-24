@@ -11,7 +11,7 @@
  * - Team hover badges everywhere for team names
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Clock,
   Plus,
@@ -45,6 +45,7 @@ import { ModularSegment } from '../components/ModularSegment';
 import { ModularLayoutToolbar } from '../components/ModularLayoutToolbar';
 import { TeamBadge } from '../components/TeamBadge';
 import { FieldLivestream } from '../components/FieldLivestream';
+import { CrLogo } from '../components/CrLogo';
 import { AudioAnnouncer } from '../utils/audioAnnouncer';
 import { getTeamName, getTeamMetadata } from '../utils/teamLookup';
 import { formatMatchLabel, getCompLevelBadgeClasses, sortTournamentMatches } from '../utils/matchUtils';
@@ -71,6 +72,7 @@ export const DashboardView: React.FC = () => {
   const partsRequests = usePitState(Selectors.partsRequests);
   const demoMode = usePitState(Selectors.demoMode);
   const activeEvent = usePitState(Selectors.activeEvent);
+  const customLogoUrl = usePitState(Selectors.customLogoUrl);
 
   const [isSyncingStatbotics, setIsSyncingStatbotics] = useState(false);
   const [statboticsMsg, setStatboticsMsg] = useState<string | null>(null);
@@ -176,53 +178,69 @@ export const DashboardView: React.FC = () => {
   };
 
   // Real event schedule & matches for current team
-  const rawEventMatches =
-    matches && matches.length > 0
+  const rawEventMatches = useMemo(() => {
+    return matches && matches.length > 0
       ? matches
       : TbaService.generateMatchesForTeamAndEvent(teamInfo.number, activeEvent?.key || '2026gacmp');
+  }, [matches, teamInfo.number, activeEvent?.key]);
 
-  const allEventMatches = sortTournamentMatches(rawEventMatches);
+  const allEventMatches = useMemo(() => sortTournamentMatches(rawEventMatches), [rawEventMatches]);
 
   // Filter matches specifically involving the active team
-  const teamAllMatches = allEventMatches.filter(
-    (m) =>
-      m.redAlliance.teams.includes(teamInfo.number) ||
-      m.blueAlliance.teams.includes(teamInfo.number)
-  );
+  const teamAllMatches = useMemo(() => {
+    return allEventMatches.filter(
+      (m) =>
+        m.redAlliance.teams.includes(teamInfo.number) ||
+        m.blueAlliance.teams.includes(teamInfo.number)
+    );
+  }, [allEventMatches, teamInfo.number]);
 
-  const teamUpcomingMatches = teamAllMatches.filter((m) => m.status !== 'COMPLETED');
+  const teamUpcomingMatches = useMemo(() => {
+    return teamAllMatches.filter((m) => m.status !== 'COMPLETED');
+  }, [teamAllMatches]);
+
   const isAllMatchesCompleted = teamUpcomingMatches.length === 0 && teamAllMatches.length > 0;
 
   // Display matches:
   // If there are uncompleted matches upcoming, show them.
   // If all qualification matches are finished, show the team's tournament matches so the user sees their real results!
-  const displayUpcoming =
-    teamUpcomingMatches.length > 0
+  const displayUpcoming = useMemo(() => {
+    return teamUpcomingMatches.length > 0
       ? teamUpcomingMatches
       : teamAllMatches.length > 0
       ? teamAllMatches
       : allEventMatches.slice(0, 8);
+  }, [teamUpcomingMatches, teamAllMatches, allEventMatches]);
 
-  const topRankings = rankings.length > 0 ? rankings.slice(0, 10) : [];
+  const topRankings = useMemo(() => {
+    return rankings.length > 0 ? rankings.slice(0, 10) : [];
+  }, [rankings]);
 
   const currentMatch = displayUpcoming[0];
-  const redTeams = currentMatch?.redAlliance.teams || [teamInfo.number];
-  const blueTeams = currentMatch?.blueAlliance.teams || [];
+  const redTeams = useMemo(() => currentMatch?.redAlliance.teams || [teamInfo.number], [currentMatch, teamInfo.number]);
+  const blueTeams = useMemo(() => currentMatch?.blueAlliance.teams || [], [currentMatch]);
 
-  const calcAllianceEPA = (teamsList: number[]) => {
-    return teamsList.reduce((acc, tNum) => {
-      const matchTeam = epaData[tNum];
-      return acc + (matchTeam && matchTeam.totalEPA !== null ? matchTeam.totalEPA : 45.0);
-    }, 0);
-  };
-
-  const redAllianceEPA = calcAllianceEPA(redTeams);
-  const blueAllianceEPA = calcAllianceEPA(blueTeams);
-  const epaDiff = blueAllianceEPA - redAllianceEPA;
-  const blueWinProb = Math.min(
-    95,
-    Math.max(5, Math.round((1 / (1 + Math.pow(10, (redAllianceEPA - blueAllianceEPA) / 50))) * 100))
+  const calcAllianceEPA = useCallback(
+    (teamsList: number[]) => {
+      return teamsList.reduce((acc, tNum) => {
+        const matchTeam = epaData[tNum];
+        return acc + (matchTeam && matchTeam.totalEPA !== null ? matchTeam.totalEPA : 45.0);
+      }, 0);
+    },
+    [epaData]
   );
+
+  const { redAllianceEPA, blueAllianceEPA, epaDiff, blueWinProb } = useMemo(() => {
+    const redEPA = calcAllianceEPA(redTeams);
+    const blueEPA = calcAllianceEPA(blueTeams);
+    const diff = blueEPA - redEPA;
+    const prob = Math.min(
+      95,
+      Math.max(5, Math.round((1 / (1 + Math.pow(10, (redEPA - blueEPA) / 50))) * 100))
+    );
+
+    return { redAllianceEPA: redEPA, blueAllianceEPA: blueEPA, epaDiff: diff, blueWinProb: prob };
+  }, [redTeams, blueTeams, calcAllianceEPA]);
 
   // FIRST Pulse Status calculation for Active Queue Call
   const getPulseStatus = () => {
@@ -351,6 +369,7 @@ export const DashboardView: React.FC = () => {
             {/* Next Match Status Header */}
             <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-zinc-800 font-mono shrink-0">
               <div className="flex items-center gap-1.5 min-w-0">
+                <CrLogo size={18} customUrl={customLogoUrl} accentColor="#fbbf24" />
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
                 <span className="font-bold text-white text-xs sm:text-sm uppercase tracking-wider truncate">
                   Qual {matchInfo.nextMatchNumber || 13}
@@ -402,6 +421,7 @@ export const DashboardView: React.FC = () => {
                         >
                           <div className="flex items-center justify-between gap-1">
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              {isOur && <CrLogo size={14} customUrl={customLogoUrl} />}
                               <TeamBadge teamNumber={tNum} highlightActive={isOur} variant="red" />
                               <span className={`text-xs font-bold truncate ${isOur ? 'text-amber-300' : 'text-zinc-100'}`} title={tName}>
                                 {tName}
@@ -461,6 +481,7 @@ export const DashboardView: React.FC = () => {
                         >
                           <div className="flex items-center justify-between gap-1">
                             <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              {isOur && <CrLogo size={14} customUrl={customLogoUrl} />}
                               <TeamBadge teamNumber={tNum} highlightActive={isOur} variant="blue" />
                               <span className={`text-xs font-bold truncate ${isOur ? 'text-amber-300' : 'text-zinc-100'}`} title={tName}>
                                 {tName}
@@ -622,7 +643,8 @@ export const DashboardView: React.FC = () => {
                               </span>
                             </td>
                             <td className="py-1.5 px-3">
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
+                                {isOurTeam && <CrLogo size={14} customUrl={customLogoUrl} />}
                                 <TeamBadge teamNumber={r.teamNumber} highlightActive={isOurTeam} />
                                 <span
                                   className={`text-xs font-semibold truncate max-w-[110px] sm:max-w-[150px] ${

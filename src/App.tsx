@@ -13,10 +13,10 @@ import { TopNav } from './components/TopNav';
 import { ThemeModal } from './components/ThemeModal';
 import { StrategyConfirmationModal } from './components/StrategyConfirmationModal';
 import { PulseSetupModal } from './components/PulseSetupModal';
+import { CrLogo } from './components/CrLogo';
 
 import { DashboardView } from './views/DashboardView';
 import { ScheduleView } from './views/ScheduleView';
-import { PreviousView } from './views/PreviousView';
 import { TbaEventReviewView } from './views/TbaEventReviewView';
 import { PlayoffsView } from './views/PlayoffsView';
 import { ControllerView } from './views/ControllerView';
@@ -31,6 +31,7 @@ export default function App() {
   const teamInfo = usePitState(Selectors.teamInfo);
   const activeEvent = usePitState(Selectors.activeEvent);
   const demoMode = usePitState(Selectors.demoMode);
+  const customLogoUrl = usePitState(Selectors.customLogoUrl);
 
   // Apply theme tokens, background/foreground colors, and font family reactively across the whole DOM
   useEffect(() => {
@@ -162,7 +163,12 @@ export default function App() {
         }}
       >
         <div className="flex items-center gap-2 sm:gap-3 text-xs flex-wrap">
-          <span className="font-mono font-bold text-zinc-200">
+          <div className="flex items-center gap-1.5 font-mono font-bold text-zinc-100">
+            <CrLogo size={16} customUrl={customLogoUrl} accentColor="#fbbf24" />
+            <span>CR555</span>
+          </div>
+          <span className="text-zinc-600">•</span>
+          <span className="font-mono text-zinc-300">
             {activeEvent?.name || activeEvent?.shortName || 'FIRST Robotics Competition'}
           </span>
           <span className="text-zinc-600">•</span>

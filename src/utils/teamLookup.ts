@@ -168,7 +168,13 @@ export function useTeamMetadata(teamNumber: number): TeamMetadata {
   useEffect(() => {
     setMeta(getTeamMetadata(teamNumber));
     const onChange = () => {
-      setMeta(getTeamMetadata(teamNumber));
+      const next = getTeamMetadata(teamNumber);
+      setMeta((prev) => {
+        if (prev.name === next.name && prev.city === next.city && prev.state === next.state) {
+          return prev;
+        }
+        return next;
+      });
     };
     listeners.add(onChange);
     return () => {
