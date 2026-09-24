@@ -12,6 +12,7 @@ import { ThemeService } from './services';
 import { TopNav } from './components/TopNav';
 import { ThemeModal } from './components/ThemeModal';
 import { StrategyConfirmationModal } from './components/StrategyConfirmationModal';
+import { PulseSetupModal } from './components/PulseSetupModal';
 
 import { DashboardView } from './views/DashboardView';
 import { ScheduleView } from './views/ScheduleView';
@@ -27,11 +28,26 @@ export default function App() {
   const currentTab = usePitState(Selectors.currentTab);
   const theme = usePitState(Selectors.themeConfig);
   const isStrategyUnlocked = usePitState(Selectors.isStrategyUnlocked);
+  const teamInfo = usePitState(Selectors.teamInfo);
+  const activeEvent = usePitState(Selectors.activeEvent);
+  const demoMode = usePitState(Selectors.demoMode);
 
   // Apply theme tokens, background/foreground colors, and font family reactively across the whole DOM
   useEffect(() => {
     ThemeService.applyTheme(theme);
   }, [theme]);
+
+  // First-run Pulse setup check: automatically opens on first visit only, persists completion
+  useEffect(() => {
+    try {
+      const isCompleted = localStorage.getItem('pitfusion_setup_completed');
+      if (!isCompleted) {
+        Actions.setSetupModalOpen(true);
+      }
+    } catch {
+      // ignore localstorage errors
+    }
+  }, []);
 
   // Connect to APIs on initial mount & periodic sync
   useEffect(() => {
@@ -99,7 +115,6 @@ export default function App() {
       case 'dashboard':
         return <DashboardView />;
       case 'watch':
-        return <PreviousView />;
       case 'schedule':
         return <ScheduleView />;
       case 'previous':
@@ -146,12 +161,19 @@ export default function App() {
           backgroundColor: theme.tokens.secondary,
         }}
       >
-        <div className="flex items-center gap-2 sm:gap-3 text-xs">
+        <div className="flex items-center gap-2 sm:gap-3 text-xs flex-wrap">
           <span className="font-mono font-bold text-zinc-200">
-            Peachtree District Championship
+            {activeEvent?.name || activeEvent?.shortName || 'FIRST Robotics Competition'}
           </span>
           <span className="text-zinc-600">•</span>
-          <span className="text-amber-400 font-bold">Team 1002 CircuitRunners</span>
+          <span className="text-amber-400 font-bold">
+            Team {teamInfo.number} {teamInfo.name}
+          </span>
+          {demoMode?.enabled && (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+              DEMO: Day 2 • 11:30 AM
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-4 text-xs">
@@ -161,6 +183,13 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1 text-zinc-400">
+            <button
+              onClick={() => Actions.setSetupModalOpen(true)}
+              className="p-1 rounded hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer text-emerald-400"
+              title="Open Setup Screen (Team, Event, Demo Mode)"
+            >
+              <Sliders size={13} />
+            </button>
             <button
               onClick={() => Actions.pullTheBlueAlliance()}
               className="p-1 rounded hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer"
@@ -194,6 +223,7 @@ export default function App() {
       </footer>
 
       {/* Modals */}
+      <PulseSetupModal />
       <ThemeModal />
       <StrategyConfirmationModal />
     </div>

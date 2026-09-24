@@ -57,11 +57,11 @@ const SPAN_LABELS: Record<ColSpan, string> = {
 
 const HEIGHT_LEVELS: HeightMultiplier[] = [0.5, 0.75, 1, 1.5, 2];
 const HEIGHT_LABELS: Record<HeightMultiplier, string> = {
-  0.5: '0.5 Unit (1 Row)',
-  0.75: '0.75 Unit',
-  1: '1 Unit (Standard • 2 Rows)',
-  1.5: '1.5 Units (3 Rows)',
-  2: '2 Units (Tall • 4 Rows • Fits 2 Stacked Cells)',
+  0.5: '0.5 Unit (~62px • 1 Row)',
+  0.75: '0.75 Unit (~95px)',
+  1: '1 Unit (Standard • ~132px • 2 Rows)',
+  1.5: '1.5 Units (~202px • 3 Rows)',
+  2: '2 Units (Tall • ~272px • Fits 2 Stacked Cells)',
 };
 
 interface ModularSegmentProps {
@@ -495,7 +495,7 @@ export const ModularSegment: React.FC<ModularSegmentProps> = ({
         <div
           className="relative flex-1 flex flex-col w-full h-full min-h-0 transition-all duration-200"
           style={{
-            minHeight: `${Math.max(140, activeRowSpan * 185 + (activeRowSpan - 1) * 12 - 38)}px`,
+            minHeight: `${Math.max(54, activeRowSpan * 62 + (activeRowSpan - 1) * 8 - 10)}px`,
           }}
         >
           {isSpacer ? (

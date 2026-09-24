@@ -103,7 +103,7 @@ export const TbaEventReviewView: React.FC = () => {
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-bold text-white text-xs">
-              {activeEvent?.name || 'Peachtree District Championship'}
+              {activeEvent?.name || eventKey}
             </span>
             <span className="text-[10px] text-zinc-400 font-bold">({eventKey})</span>
             <button

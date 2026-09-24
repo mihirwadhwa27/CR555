@@ -22,7 +22,9 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
   const [streamIdOrUrl, setStreamIdOrUrl] = useState<string>('UCr_x7a303YmQ61V81kP0gqQ'); // Default FIRST Robotics channel
   const [customInput, setCustomInput] = useState<string>('');
   const [showConfig, setShowConfig] = useState<boolean>(false);
-  const [streamTitle, setStreamTitle] = useState<string>('Peachtree District Arena Stream');
+  const [streamTitle, setStreamTitle] = useState<string>(
+    activeEvent?.name ? `${activeEvent.name} Arena Stream` : 'Arena Field Stream'
+  );
   const [useSimulatedFeed, setUseSimulatedFeed] = useState<boolean>(true); // Default to simulated arena feed to guarantee flawless height & display
 
   // Automatically check & pull webcast from TBA event on mount/update
@@ -32,12 +34,14 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
       if (primaryWebcast.type === 'twitch') {
         setStreamType('twitch');
         setStreamIdOrUrl(primaryWebcast.channel);
-        setStreamTitle(primaryWebcast.name || 'TBA Twitch Webcast');
+        setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} Twitch Webcast`);
       } else if (primaryWebcast.type === 'youtube') {
         setStreamType('youtube');
         setStreamIdOrUrl(primaryWebcast.channel);
-        setStreamTitle(primaryWebcast.name || 'TBA YouTube Webcast');
+        setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} YouTube Webcast`);
       }
+    } else if (activeEvent?.name) {
+      setStreamTitle(`${activeEvent.shortName || activeEvent.name} Arena Stream`);
     }
   }, [activeEvent]);
 
@@ -121,9 +125,9 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
 
     // YouTube: handle whether it's a channel ID or specific video ID
     if (streamIdOrUrl.startsWith('UC') || streamIdOrUrl.length > 15) {
-      return `https://www.youtube-nocookie.com/embed/live_stream?channel=${streamIdOrUrl}&autoplay=1&mute=1&enablejsapi=1`;
+      return `https://www.youtube.com/embed/live_stream?channel=${streamIdOrUrl}&autoplay=1&mute=1&playsinline=1`;
     }
-    return `https://www.youtube-nocookie.com/embed/${streamIdOrUrl}?autoplay=1&mute=1&rel=0&enablejsapi=1`;
+    return `https://www.youtube.com/embed/${streamIdOrUrl}?autoplay=1&mute=1&playsinline=1&rel=0`;
   };
 
   return (
@@ -274,11 +278,11 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
       )}
 
       {/* Live Video Embed / Simulation Screen */}
-      <div className="flex-1 my-2 min-h-0 relative rounded-xl overflow-hidden bg-black border border-zinc-800 shadow-inner flex flex-col">
+      <div className="w-full aspect-video max-h-[280px] sm:max-h-[320px] my-2 relative rounded-xl overflow-hidden bg-black border border-zinc-800 shadow-inner flex flex-col mx-auto">
         {useSimulatedFeed ? (
           <PlaceholderVideoFeed
             title={streamTitle}
-            matchName="Peachtree District Championship • Arena Field 1"
+            matchName={`${activeEvent?.name || activeEvent?.shortName || 'Tournament'} • Arena Field 1`}
             isLive={true}
             hasExternalStream={Boolean(streamIdOrUrl)}
             onToggleExternal={() => setUseSimulatedFeed(false)}
@@ -287,8 +291,8 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
           <iframe
             src={getEmbedUrl()}
             title="Field Livestream"
-            className="w-full h-full border-0 absolute inset-0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            className="w-full h-full border-0 absolute inset-0 z-10"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
           />
         )}
@@ -296,7 +300,7 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
 
       {/* Footer status */}
       <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs font-mono text-zinc-400 shrink-0">
-        <span className="truncate">Peachtree District Championship • Field Livestream</span>
+        <span className="truncate">{activeEvent?.name || activeEvent?.shortName || 'Tournament'} • Field Livestream</span>
         <span className="text-emerald-400 text-[11px] font-bold flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
           ONLINE

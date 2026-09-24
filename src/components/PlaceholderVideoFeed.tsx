@@ -32,7 +32,7 @@ interface PlaceholderVideoFeedProps {
 
 export const PlaceholderVideoFeed: React.FC<PlaceholderVideoFeedProps> = ({
   title = 'Field Livestream',
-  matchName = 'Peachtree District Championship • Qual 13',
+  matchName = 'Arena Field 1 • Qual 13',
   isLive = true,
   onToggleExternal,
   hasExternalStream = false,
@@ -156,10 +156,10 @@ export const PlaceholderVideoFeed: React.FC<PlaceholderVideoFeedProps> = ({
               <Camera size={32} />
             </div>
             <div className="text-sm font-bold text-white uppercase tracking-wider">
-              Red Driver Station Cam • Station 1 (Team 1002)
+              Red Driver Station Cam • Station 1
             </div>
             <p className="text-xs text-zinc-400 max-w-sm">
-              Live optical view facing Peachtree District Arena with driver station telemetry overlay active.
+              Live optical view facing Arena Field with driver station telemetry overlay active.
             </p>
           </div>
         )}

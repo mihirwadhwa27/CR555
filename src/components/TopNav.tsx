@@ -12,6 +12,8 @@ import {
   X,
   Check,
   Clock,
+  SlidersHorizontal,
+  Sparkles,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { NavigationTab } from '../types';
@@ -24,10 +26,10 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: 'dashboard', label: 'General' },
-  { id: 'tools', label: 'Ledger' },
-  { id: 'schedule', label: 'Complete Schedule' },
-  { id: 'previous', label: 'Event Review (TBA)' },
+  { id: 'schedule', label: 'Schedule & Videos' },
   { id: 'playoffs', label: 'Playoffs' },
+  { id: 'previous', label: 'Event Review (TBA)' },
+  { id: 'tools', label: 'Ledger' },
   { id: 'controller', label: 'Controller' },
   { id: 'scout', label: 'Strategy', isPrivate: true },
 ];
@@ -38,15 +40,25 @@ export const TopNav: React.FC = () => {
   const activeEvent = usePitState(Selectors.activeEvent);
   const theme = usePitState(Selectors.themeConfig);
   const isStrategyUnlocked = usePitState(Selectors.isStrategyUnlocked);
+  const demoMode = usePitState(Selectors.demoMode);
 
-  // Live Competition / Arena Clock
+  // Live Competition / Arena Clock (with Demo Mode simulation support)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   const [use24Hour, setUse24Hour] = useState<boolean>(false);
 
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const updateTime = () => {
+      if (demoMode?.enabled && typeof demoMode.simulatedTimeOffset === 'number') {
+        setCurrentTime(new Date(Date.now() + demoMode.simulatedTimeOffset));
+      } else {
+        setCurrentTime(new Date());
+      }
+    };
+
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [demoMode?.enabled, demoMode?.simulatedTimeOffset]);
 
   // Modal for quick team switcher
   const [isTeamModalOpen, setIsTeamModalOpen] = useState(false);
@@ -140,12 +152,12 @@ export const TopNav: React.FC = () => {
             </nav>
           </div>
 
-          {/* Right Action Controls: Live Clock, Team Selector & Discreet Icons */}
-          <div className="flex items-center gap-2 shrink-0">
+          {/* Right Action Controls: Live Clock, Demo Pill, Setup, Team Selector & Discreet Icons */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Live Arena / Pit Clock */}
             <div
               onClick={() => setUse24Hour(!use24Hour)}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/60 border border-zinc-800 font-mono text-zinc-200 cursor-pointer hover:border-zinc-700 transition-colors shadow-xs select-none"
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg bg-black/60 border border-zinc-800 font-mono text-zinc-200 cursor-pointer hover:border-zinc-700 transition-colors shadow-xs select-none"
               title="Arena Pit Clock (click to toggle 12h/24h format)"
             >
               <Clock size={13} className="text-amber-400 animate-pulse shrink-0" />
@@ -158,7 +170,7 @@ export const TopNav: React.FC = () => {
                 })}
               </span>
               <span className="text-[9px] text-zinc-400 uppercase hidden lg:inline border-l border-zinc-800 pl-1.5">
-                {currentTime.toLocaleDateString([], {
+                {demoMode?.enabled ? 'Day 2 • Sat' : currentTime.toLocaleDateString([], {
                   weekday: 'short',
                   month: 'short',
                   day: 'numeric',
@@ -166,13 +178,43 @@ export const TopNav: React.FC = () => {
               </span>
             </div>
 
-            {/* Pill: Reselect Team */}
+            {/* Active Demo Mode Pill (Pulse Simulation) */}
+            {demoMode?.enabled && (
+              <button
+                onClick={() => Actions.setSetupModalOpen(true)}
+                className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 transition-all cursor-pointer shadow-xs"
+                title="Demo Mode: Day 2 • 11:30 AM (Click to change)"
+              >
+                <Sparkles size={11} className="text-emerald-400 shrink-0" />
+                <span>DEMO: Day 2 @ 11:30 AM</span>
+              </button>
+            )}
+
+            {/* Pulse Setup Wizard Button */}
             <button
-              onClick={() => setIsTeamModalOpen(true)}
-              className="px-2.5 py-1 rounded-full text-xs font-medium border border-zinc-800 bg-black/40 text-zinc-300 hover:border-zinc-700 hover:text-white transition-colors cursor-pointer"
-              title="Switch FRC Team Number"
+              id="pulse-setup-trigger-btn"
+              onClick={() => Actions.setSetupModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border border-zinc-800 bg-zinc-900/90 text-zinc-200 hover:border-emerald-500/50 hover:text-white transition-all cursor-pointer shadow-xs"
+              title="Open Pulse Setup Screen (Team, Event, Demo Mode)"
             >
-              Team {teamInfo.number}
+              <SlidersHorizontal size={13} className="text-emerald-400 shrink-0" />
+              <span className="font-medium">Setup</span>
+            </button>
+
+            {/* Pill: Active Team & Location */}
+            <button
+              onClick={() => Actions.setSetupModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold border border-zinc-800 bg-black/50 text-zinc-200 hover:border-zinc-700 hover:text-white transition-colors cursor-pointer shadow-xs group"
+              title={`Team ${teamInfo.number}: ${teamInfo.name} (${teamInfo.location || 'USA'}) - Click to change in Setup`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 group-hover:scale-125 transition-transform shrink-0" />
+              <span className="font-mono font-bold text-amber-400">{teamInfo.number}</span>
+              <span className="text-zinc-200 font-medium max-w-[110px] sm:max-w-[160px] truncate">{teamInfo.name}</span>
+              {teamInfo.location && (
+                <span className="hidden md:inline text-[10px] text-zinc-400 font-sans pl-1.5 border-l border-zinc-800 shrink-0">
+                  {teamInfo.location}
+                </span>
+              )}
             </button>
 
             {/* Small Subtle Icons: Theme & Settings */}
@@ -225,7 +267,7 @@ export const TopNav: React.FC = () => {
 
             <div className="grid grid-cols-2 gap-2">
               {[
-                { number: 1002, name: 'CircuitRunners' },
+                { number: 1002, name: 'CircuitRunners Robotics' },
                 { number: 2910, name: 'Jack in the Bot' },
                 { number: 1678, name: 'Citrus Circuits' },
                 { number: 254, name: 'The Cheesy Poofs' },

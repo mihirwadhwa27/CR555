@@ -35,18 +35,22 @@ import {
   Volume2,
   VolumeX,
   Mic,
+  Play,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { MatchModel } from '../types';
+import { TbaService } from '../services';
 import { useModularLayout, SegmentConfig } from '../hooks/useModularLayout';
 import { ModularSegment } from '../components/ModularSegment';
 import { ModularLayoutToolbar } from '../components/ModularLayoutToolbar';
 import { TeamBadge } from '../components/TeamBadge';
 import { FieldLivestream } from '../components/FieldLivestream';
 import { AudioAnnouncer } from '../utils/audioAnnouncer';
+import { getTeamName, getTeamMetadata } from '../utils/teamLookup';
+import { formatMatchLabel, getCompLevelBadgeClasses, sortTournamentMatches } from '../utils/matchUtils';
 
 const DEFAULT_SEGMENTS: SegmentConfig[] = [
-  { id: 'match_13', title: 'Next Match Scouting & Matchup', colSpan: 'half', heightMultiplier: 2, order: 0, visible: true },
+  { id: 'match_13', title: 'Next Match Scouting & Matchup', colSpan: 'half', heightMultiplier: 1, order: 0, visible: true },
   { id: 'livestream', title: 'Field Livestream', colSpan: 'half', heightMultiplier: 1, order: 1, visible: true },
   { id: 'upcoming', title: 'Upcoming Matches Schedule', colSpan: 'half', heightMultiplier: 1, order: 2, visible: true },
   { id: 'ranking', title: 'Division Rankings', colSpan: 'half', heightMultiplier: 1, order: 3, visible: true },
@@ -65,6 +69,8 @@ export const DashboardView: React.FC = () => {
   const matches = usePitState(Selectors.matches);
   const announcements = usePitState(Selectors.announcements);
   const partsRequests = usePitState(Selectors.partsRequests);
+  const demoMode = usePitState(Selectors.demoMode);
+  const activeEvent = usePitState(Selectors.activeEvent);
 
   const [isSyncingStatbotics, setIsSyncingStatbotics] = useState(false);
   const [statboticsMsg, setStatboticsMsg] = useState<string | null>(null);
@@ -141,89 +147,16 @@ export const DashboardView: React.FC = () => {
   };
 
   const handleTestVoiceCall = (phrase: string, subtext: string) => {
-    AudioAnnouncer.speak(`Attention Circuit Runners Team ${teamInfo.number}: ${phrase}. ${subtext}`);
+    AudioAnnouncer.speak(`Attention ${teamInfo.name} Team ${teamInfo.number}: ${phrase}. ${subtext}`);
   };
 
-  // FIRST Pulse Status calculation for Active Queue Call
-  const getPulseStatus = () => {
-    if (pulseMode === 'QUEUE_5MIN') {
-      return {
-        phrase: 'Queue in 5 min',
-        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-        ringColor: 'border-amber-400',
-        subtext: 'Drive Team prepare robot and cart in Pit 1002 • Est. 10:45 AM',
-        iconType: 'clock' as const,
-      };
-    }
-    if (pulseMode === 'ON_DECK') {
-      return {
-        phrase: 'On Deck',
-        badgeColor: 'bg-orange-500/25 text-orange-300 border-orange-500/50 animate-pulse',
-        ringColor: 'border-orange-400',
-        subtext: 'Drive Team proceed immediately to Arena Entrance Gate • Station Red 1',
-        iconType: 'alert' as const,
-      };
-    }
-    if (pulseMode === 'NOW_QUEUING') {
-      return {
-        phrase: 'Now Queuing',
-        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-        ringColor: 'border-amber-400',
-        subtext: 'Team 1002 report to Staging Lane 1 • Qual 13',
-        iconType: 'clock' as const,
-      };
-    }
-    if (pulseMode === 'NO_MATCHES') {
-      return {
-        phrase: 'No matches remaining today...',
-        badgeColor: 'bg-zinc-800/80 text-zinc-300 border-zinc-700',
-        ringColor: 'border-zinc-600',
-        subtext: 'All qualification matches completed for today • Review match replays',
-        iconType: 'check' as const,
-      };
-    }
+  // Auto-sync matches & EPA from TBA whenever event or team changes
+  useEffect(() => {
+    Actions.pullTbaMatches();
+    Actions.pullStatboticsEpa();
+  }, [activeEvent?.key, teamInfo.number]);
 
-    // AUTO Mode: dynamically driven by countdown and schedule
-    if (upcomingMatches.length === 0 && matches.length > 0 && matches.every((m) => m.status === 'COMPLETED')) {
-      return {
-        phrase: 'No matches remaining today...',
-        badgeColor: 'bg-zinc-800/80 text-zinc-300 border-zinc-700',
-        ringColor: 'border-zinc-600',
-        subtext: 'All qualification matches completed for today • Pits close at 7:00 PM',
-        iconType: 'check' as const,
-      };
-    }
-
-    if (secondsUntilNextMatch <= 180) {
-      return {
-        phrase: 'On Deck',
-        badgeColor: 'bg-orange-500/25 text-orange-300 border-orange-500/50 animate-pulse',
-        ringColor: 'border-orange-400',
-        subtext: 'Drive Team proceed immediately to Arena Entrance Gate • Station Red 1',
-        iconType: 'alert' as const,
-      };
-    }
-
-    if (secondsUntilNextMatch <= 360) {
-      return {
-        phrase: 'Queue in 5 min',
-        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
-        ringColor: 'border-amber-400',
-        subtext: 'Drive Team prepare robot and cart in Pit 1002 • Staging Lane 1',
-        iconType: 'clock' as const,
-      };
-    }
-
-    const mins = Math.max(1, Math.round(secondsUntilNextMatch / 60));
-    return {
-      phrase: `Queue in ${mins} min`,
-      badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
-      ringColor: 'border-blue-400',
-      subtext: `Drive Team stand by in pit • Next queue call in ~${mins} minutes`,
-      iconType: 'clock' as const,
-    };
-  };
-
+  // Form submit handlers
   const handleAddAnnouncementSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (newAnnouncementText.trim()) {
@@ -242,52 +175,39 @@ export const DashboardView: React.FC = () => {
     }
   };
 
-  // Upcoming matches calculation - comprehensive schedule of the next couple of matches
-  const upcomingMatches = matches.filter((m) => m.status !== 'COMPLETED');
-  const fallbackMatches: MatchModel[] = [
-    {
-      key: 'qm_13',
-      matchNumber: 13,
-      compLevel: 'QUAL',
-      status: 'QUEUED',
-      scheduledTime: Date.now() + 18 * 60 * 1000,
-      redAlliance: { teams: [1002, 1771, 3635], score: 0 },
-      blueAlliance: { teams: [1414, 4188, 4910], score: 0 },
-    },
-    {
-      key: 'qm_27',
-      matchNumber: 27,
-      compLevel: 'QUAL',
-      status: 'SCHEDULED',
-      scheduledTime: Date.now() + 95 * 60 * 1000,
-      redAlliance: { teams: [1002, 2974, 8736], score: 0 },
-      blueAlliance: { teams: [6705, 4189, 5109], score: 0 },
-    },
-    {
-      key: 'qm_42',
-      matchNumber: 42,
-      compLevel: 'QUAL',
-      status: 'SCHEDULED',
-      scheduledTime: Date.now() + 185 * 60 * 1000,
-      redAlliance: { teams: [6023, 1683, 8080], score: 0 },
-      blueAlliance: { teams: [1002, 1261, 6829], score: 0 },
-    },
-    {
-      key: 'qm_56',
-      matchNumber: 56,
-      compLevel: 'QUAL',
-      status: 'SCHEDULED',
-      scheduledTime: Date.now() + 270 * 60 * 1000,
-      redAlliance: { teams: [1002, 4941, 7451], score: 0 },
-      blueAlliance: { teams: [1771, 3329, 6340], score: 0 },
-    },
-  ];
-  const displayUpcoming = upcomingMatches.length > 0 ? upcomingMatches : fallbackMatches;
+  // Real event schedule & matches for current team
+  const rawEventMatches =
+    matches && matches.length > 0
+      ? matches
+      : TbaService.generateMatchesForTeamAndEvent(teamInfo.number, activeEvent?.key || '2026gacmp');
+
+  const allEventMatches = sortTournamentMatches(rawEventMatches);
+
+  // Filter matches specifically involving the active team
+  const teamAllMatches = allEventMatches.filter(
+    (m) =>
+      m.redAlliance.teams.includes(teamInfo.number) ||
+      m.blueAlliance.teams.includes(teamInfo.number)
+  );
+
+  const teamUpcomingMatches = teamAllMatches.filter((m) => m.status !== 'COMPLETED');
+  const isAllMatchesCompleted = teamUpcomingMatches.length === 0 && teamAllMatches.length > 0;
+
+  // Display matches:
+  // If there are uncompleted matches upcoming, show them.
+  // If all qualification matches are finished, show the team's tournament matches so the user sees their real results!
+  const displayUpcoming =
+    teamUpcomingMatches.length > 0
+      ? teamUpcomingMatches
+      : teamAllMatches.length > 0
+      ? teamAllMatches
+      : allEventMatches.slice(0, 8);
+
   const topRankings = rankings.length > 0 ? rankings.slice(0, 10) : [];
 
   const currentMatch = displayUpcoming[0];
-  const redTeams = currentMatch?.redAlliance.teams || [1002, 1771, 3635];
-  const blueTeams = currentMatch?.blueAlliance.teams || [1414, 4188, 4910];
+  const redTeams = currentMatch?.redAlliance.teams || [teamInfo.number];
+  const blueTeams = currentMatch?.blueAlliance.teams || [];
 
   const calcAllianceEPA = (teamsList: number[]) => {
     return teamsList.reduce((acc, tNum) => {
@@ -301,48 +221,117 @@ export const DashboardView: React.FC = () => {
   const epaDiff = blueAllianceEPA - redAllianceEPA;
   const blueWinProb = Math.min(
     95,
-    Math.max(5, Math.round(1 / (1 + Math.pow(10, (redAllianceEPA - blueAllianceEPA) / 50)) * 100))
+    Math.max(5, Math.round((1 / (1 + Math.pow(10, (redAllianceEPA - blueAllianceEPA) / 50))) * 100))
   );
 
+  // FIRST Pulse Status calculation for Active Queue Call
+  const getPulseStatus = () => {
+    if (pulseMode === 'QUEUE_5MIN') {
+      return {
+        phrase: 'Queue in 5 min',
+        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        ringColor: 'border-amber-400',
+        subtext: `Drive Team prepare robot and cart in Pit ${teamInfo.number} • Est. 10:45 AM`,
+        iconType: 'clock' as const,
+      };
+    }
+    if (pulseMode === 'ON_DECK') {
+      return {
+        phrase: 'On Deck',
+        badgeColor: 'bg-orange-500/25 text-orange-300 border-orange-500/50 animate-pulse',
+        ringColor: 'border-orange-400',
+        subtext: 'Drive Team proceed immediately to Arena Entrance Gate • Station Red 1',
+        iconType: 'alert' as const,
+      };
+    }
+    if (pulseMode === 'NOW_QUEUING') {
+      return {
+        phrase: 'Now Queuing',
+        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        ringColor: 'border-amber-400',
+        subtext: `Team ${teamInfo.number} report to Staging Lane 1 • ${currentMatch ? formatMatchLabel(currentMatch) : `Qual ${matchInfo.nextMatchNumber || 1}`}`,
+        iconType: 'clock' as const,
+      };
+    }
+    if (pulseMode === 'NO_MATCHES' || isAllMatchesCompleted) {
+      return {
+        phrase: 'All Matches Completed',
+        badgeColor: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+        ringColor: 'border-emerald-400',
+        subtext: `Team ${teamInfo.number} completed all qualification matches at ${activeEvent?.name || activeEvent?.shortName || 'event'} • Review match replays`,
+        iconType: 'check' as const,
+      };
+    }
+
+    if (secondsUntilNextMatch <= 180) {
+      return {
+        phrase: 'On Deck',
+        badgeColor: 'bg-orange-500/25 text-orange-300 border-orange-500/50 animate-pulse',
+        ringColor: 'border-orange-400',
+        subtext: 'Drive Team proceed immediately to Arena Entrance Gate',
+        iconType: 'alert' as const,
+      };
+    }
+
+    if (secondsUntilNextMatch <= 360) {
+      return {
+        phrase: 'Queue in 5 min',
+        badgeColor: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+        ringColor: 'border-amber-400',
+        subtext: `Drive Team prepare robot and cart in Pit ${teamInfo.number} • Staging Lane 1`,
+        iconType: 'clock' as const,
+      };
+    }
+
+    const mins = Math.max(1, Math.round(secondsUntilNextMatch / 60));
+    return {
+      phrase: `Queue in ${mins} min`,
+      badgeColor: 'bg-blue-500/20 text-blue-300 border-blue-500/40',
+      ringColor: 'border-blue-400',
+      subtext: `Drive Team stand by in pit • Next queue call in ~${mins} minutes`,
+      iconType: 'clock' as const,
+    };
+  };
+
   // Field queue for All Field Matches preview in Upcoming
-  const allFieldQueue = [
-    {
-      number: 13,
-      time: 'In ~18m',
-      status: 'QUEUED (TEAM 1002)',
-      is1002: true,
-      red: [1002, 1771, 3635],
-      blue: [1414, 4188, 4910],
-      note: 'Team 1002 on Red Alliance (Station R1) • Queued',
-    },
-    {
-      number: 14,
-      time: 'In ~26m',
-      status: 'SCHEDULED',
-      is1002: false,
-      red: [2415, 4026, 7525],
-      blue: [1648, 5203, 8575],
-      note: 'Qualification Match 14 • Scheduled',
-    },
-    {
-      number: 15,
-      time: 'In ~34m',
-      status: 'SCHEDULED',
-      is1002: false,
-      red: [3490, 4509, 8736],
-      blue: [1102, 2974, 5109],
-      note: 'Qualification Match 15 • Scheduled',
-    },
-    {
-      number: 16,
-      time: 'In ~42m',
-      status: 'SCHEDULED',
-      is1002: false,
-      red: [6705, 4189, 8080],
-      blue: [1261, 6829, 7451],
-      note: 'Qualification Match 16 • Scheduled',
-    },
-  ];
+  const allUpcomingField = allEventMatches.filter((m) => m.status !== 'COMPLETED');
+  const allFieldQueue =
+    allUpcomingField.length > 0
+      ? allUpcomingField.slice(0, 6).map((m, idx) => {
+          const isOur =
+            m.redAlliance.teams.includes(teamInfo.number) ||
+            m.blueAlliance.teams.includes(teamInfo.number);
+          const inMins = 12 + idx * 8;
+          return {
+            match: m,
+            number: m.matchNumber,
+            time: idx === 0 ? 'Queuing / Next' : `In ~${inMins}m`,
+            status: isOur ? `QUEUED (TEAM ${teamInfo.number})` : (m.status || 'SCHEDULED'),
+            isOurTeam: isOur,
+            isCompleted: false,
+            red: m.redAlliance.teams,
+            blue: m.blueAlliance.teams,
+            note: isOur
+              ? `Team ${teamInfo.number} on ${m.redAlliance.teams.includes(teamInfo.number) ? 'Red' : 'Blue'} Alliance`
+              : `${formatMatchLabel(m)} • Scheduled`,
+          };
+        })
+      : allEventMatches.slice(0, 6).map((m) => {
+          const isOur =
+            m.redAlliance.teams.includes(teamInfo.number) ||
+            m.blueAlliance.teams.includes(teamInfo.number);
+          return {
+            match: m,
+            number: m.matchNumber,
+            time: 'Completed',
+            status: isOur ? `FINAL (TEAM ${teamInfo.number})` : 'FINAL',
+            isOurTeam: isOur,
+            isCompleted: true,
+            red: m.redAlliance.teams,
+            blue: m.blueAlliance.teams,
+            note: `Final Score: Red ${m.redAlliance.score} - Blue ${m.blueAlliance.score}`,
+          };
+        });
 
   // Render individual segment by ID
   const renderSegmentContent = (segId: string) => {
@@ -353,28 +342,30 @@ export const DashboardView: React.FC = () => {
       case 'match_13':
         return (
           <div
-            className="w-full h-full rounded-2xl p-3.5 sm:p-4 border flex flex-col justify-between shadow-xs overflow-hidden"
+            className="w-full h-full rounded-2xl p-2.5 sm:p-3.5 border flex flex-col justify-between shadow-xs overflow-hidden"
             style={{
               backgroundColor: theme.tokens.secondary,
               borderColor: theme.tokens.border,
             }}
           >
             {/* Next Match Status Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-zinc-800 font-mono shrink-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
-                <span className="font-bold text-white text-xs sm:text-sm uppercase tracking-wider">
-                  Qualification Match {matchInfo.nextMatchNumber || 13}
+            <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-zinc-800 font-mono shrink-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <span className="font-bold text-white text-xs sm:text-sm uppercase tracking-wider truncate">
+                  Qual {matchInfo.nextMatchNumber || 13}
                 </span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 shrink-0">
-                  RED ALLIANCE • STATION R1 (TEAM 1002)
+                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 shrink-0">
+                  {redTeams.includes(teamInfo.number)
+                    ? `RED ${redTeams.indexOf(teamInfo.number) + 1} • ${teamInfo.number}`
+                    : `BLUE ${blueTeams.indexOf(teamInfo.number) + 1} • ${teamInfo.number}`}
                 </span>
               </div>
-              <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 shadow-xs shrink-0 self-start sm:self-auto">
-                <Clock size={13} className="text-amber-400 animate-pulse shrink-0" />
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-[10px] font-bold uppercase text-amber-300/80">Starts In:</span>
-                  <span className="text-sm sm:text-base font-black font-mono tracking-tight text-amber-300">
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 shadow-xs shrink-0">
+                <Clock size={11} className="text-amber-400 animate-pulse shrink-0" />
+                <div className="flex items-baseline gap-1">
+                  <span className="text-[9px] font-bold uppercase text-amber-300/80 hidden sm:inline">In:</span>
+                  <span className="text-xs sm:text-sm font-black font-mono tracking-tight text-amber-300">
                     {formatCountdown(secondsUntilNextMatch)}
                   </span>
                 </div>
@@ -382,122 +373,124 @@ export const DashboardView: React.FC = () => {
             </div>
 
             {/* Scrollable Middle: Next Match In-Depth Roster & Strategy */}
-            <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 my-2 no-scrollbar">
+            <div className="flex-1 overflow-y-auto pr-1 space-y-2 my-1.5 no-scrollbar">
               {/* Alliance Rosters with Component EPAs and Roles */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
-                {/* Red Alliance (Home) */}
+                {/* Red Alliance */}
                 <div className="p-2.5 rounded-xl bg-red-950/30 border border-red-800/60 flex flex-col justify-between space-y-2">
                   <div className="flex items-center justify-between pb-1 border-b border-red-900/40">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-red-500" />
                       <span className="font-bold text-red-400 tracking-wider">RED ALLIANCE</span>
                     </div>
-                    <span className="text-red-300 font-bold">152.4 EPA</span>
+                    <span className="text-red-300 font-bold">{redAllianceEPA.toFixed(1)} EPA</span>
                   </div>
 
                   <div className="space-y-1.5">
-                    {/* Team 1002 */}
-                    <div className="p-1.5 rounded-lg bg-red-900/40 border border-red-500/50 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <TeamBadge teamNumber={1002} highlight1002 variant="red" />
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-amber-400 text-black font-black">R1</span>
+                    {redTeams.map((tNum, idx) => {
+                      const isOur = tNum === teamInfo.number;
+                      const tEpa = epaData[tNum]?.totalEPA ?? 48.0;
+                      const tName = isOur ? teamInfo.name : getTeamName(tNum);
+                      return (
+                        <div
+                          key={tNum}
+                          className={`p-2 rounded-lg border space-y-1 ${
+                            isOur
+                              ? 'bg-red-900/40 border-red-500/50'
+                              : 'bg-black/40 border-zinc-800/80'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <TeamBadge teamNumber={tNum} highlightActive={isOur} variant="red" />
+                              <span className={`text-xs font-bold truncate ${isOur ? 'text-amber-300' : 'text-zinc-100'}`} title={tName}>
+                                {tName}
+                              </span>
+                              <span
+                                className={`text-[9px] px-1 py-0.2 rounded font-black shrink-0 ${
+                                  isOur ? 'bg-amber-400 text-black' : 'bg-zinc-800 text-zinc-300'
+                                }`}
+                              >
+                                R{idx + 1}
+                              </span>
+                            </div>
+                            <span className={`${isOur ? 'text-red-200 font-bold' : 'text-zinc-300'} text-xs shrink-0 font-mono`}>
+                              {tEpa.toFixed(1)} EPA
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                            <span className="text-zinc-400 text-[10px] truncate">
+                              {(() => {
+                                const meta = getTeamMetadata(tNum);
+                                return meta.city && meta.state ? `${meta.city}, ${meta.state}` : (meta.city || meta.state || '');
+                              })()}
+                            </span>
+                            <span className="text-zinc-500 text-[9px] shrink-0 font-mono">
+                              A:{(tEpa * 0.3).toFixed(1)} • T:{(tEpa * 0.55).toFixed(1)} • E:{(tEpa * 0.15).toFixed(1)}
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-red-200 font-bold">48.0 EPA</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-300">
-                        <span className="text-amber-300/90 font-semibold truncate">CircuitRunners</span>
-                        <span className="text-zinc-400 text-[9px] shrink-0">A:14.2 • T:26.8 • E:7.0</span>
-                      </div>
-                    </div>
-
-                    {/* Team 1771 */}
-                    <div className="p-1.5 rounded-lg bg-black/40 border border-zinc-800/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <TeamBadge teamNumber={1771} />
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 font-bold">R2</span>
-                        </div>
-                        <span className="text-zinc-300 font-bold">54.2 EPA</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                        <span className="text-zinc-300 truncate">North Gwinnett</span>
-                        <span className="text-zinc-500 text-[9px] shrink-0">A:16.0 • T:28.2 • E:10.0</span>
-                      </div>
-                    </div>
-
-                    {/* Team 3635 */}
-                    <div className="p-1.5 rounded-lg bg-black/40 border border-zinc-800/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <TeamBadge teamNumber={3635} />
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 font-bold">R3</span>
-                        </div>
-                        <span className="text-zinc-300 font-bold">50.2 EPA</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                        <span className="text-zinc-300 truncate">Flying Horsepower</span>
-                        <span className="text-zinc-500 text-[9px] shrink-0">A:12.0 • T:27.2 • E:11.0</span>
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Blue Alliance (Opponents) */}
+                {/* Blue Alliance */}
                 <div className="p-2.5 rounded-xl bg-blue-950/30 border border-blue-800/60 flex flex-col justify-between space-y-2">
                   <div className="flex items-center justify-between pb-1 border-b border-blue-900/40">
                     <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-blue-500" />
                       <span className="font-bold text-blue-400 tracking-wider">BLUE ALLIANCE</span>
                     </div>
-                    <span className="text-blue-300 font-bold">147.2 EPA</span>
+                    <span className="text-blue-300 font-bold">{blueAllianceEPA.toFixed(1)} EPA</span>
                   </div>
 
                   <div className="space-y-1.5">
-                    {/* Team 1414 */}
-                    <div className="p-1.5 rounded-lg bg-black/40 border border-zinc-800/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <TeamBadge teamNumber={1414} />
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 font-bold">B1</span>
+                    {blueTeams.map((tNum, idx) => {
+                      const isOur = tNum === teamInfo.number;
+                      const tEpa = epaData[tNum]?.totalEPA ?? 46.5;
+                      const tName = isOur ? teamInfo.name : getTeamName(tNum);
+                      return (
+                        <div
+                          key={tNum}
+                          className={`p-2 rounded-lg border space-y-1 ${
+                            isOur
+                              ? 'bg-blue-900/40 border-blue-500/50'
+                              : 'bg-black/40 border-zinc-800/80'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <TeamBadge teamNumber={tNum} highlightActive={isOur} variant="blue" />
+                              <span className={`text-xs font-bold truncate ${isOur ? 'text-amber-300' : 'text-zinc-100'}`} title={tName}>
+                                {tName}
+                              </span>
+                              <span
+                                className={`text-[9px] px-1 py-0.2 rounded font-black shrink-0 ${
+                                  isOur ? 'bg-amber-400 text-black' : 'bg-zinc-800 text-zinc-300'
+                                }`}
+                              >
+                                B{idx + 1}
+                              </span>
+                            </div>
+                            <span className={`${isOur ? 'text-blue-200 font-bold' : 'text-zinc-300'} text-xs shrink-0 font-mono`}>
+                              {tEpa.toFixed(1)} EPA
+                            </span>
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                            <span className="text-zinc-400 text-[10px] truncate">
+                              {(() => {
+                                const meta = getTeamMetadata(tNum);
+                                return meta.city && meta.state ? `${meta.city}, ${meta.state}` : (meta.city || meta.state || '');
+                              })()}
+                            </span>
+                            <span className="text-zinc-500 text-[9px] shrink-0 font-mono">
+                              A:{(tEpa * 0.3).toFixed(1)} • T:{(tEpa * 0.55).toFixed(1)} • E:{(tEpa * 0.15).toFixed(1)}
+                            </span>
+                          </div>
                         </div>
-                        <span className="text-zinc-300 font-bold">51.0 EPA</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                        <span className="text-zinc-300 truncate">IHOT Robotics</span>
-                        <span className="text-zinc-500 text-[9px] shrink-0">A:15.1 • T:27.9 • E:8.0</span>
-                      </div>
-                    </div>
-
-                    {/* Team 4188 */}
-                    <div className="p-1.5 rounded-lg bg-black/40 border border-zinc-800/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <TeamBadge teamNumber={4188} />
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 font-bold">B2</span>
-                        </div>
-                        <span className="text-zinc-300 font-bold">49.8 EPA</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                        <span className="text-zinc-300 truncate">Columbus Space Program</span>
-                        <span className="text-zinc-500 text-[9px] shrink-0">A:14.8 • T:26.0 • E:9.0</span>
-                      </div>
-                    </div>
-
-                    {/* Team 4910 */}
-                    <div className="p-1.5 rounded-lg bg-black/40 border border-zinc-800/80 space-y-1">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <TeamBadge teamNumber={4910} />
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-zinc-800 text-zinc-300 font-bold">B3</span>
-                        </div>
-                        <span className="text-zinc-300 font-bold">46.4 EPA</span>
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                        <span className="text-zinc-300 truncate">East Cobb Robotics</span>
-                        <span className="text-zinc-500 text-[9px] shrink-0">A:12.4 • T:25.0 • E:9.0</span>
-                      </div>
-                    </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -567,7 +560,7 @@ export const DashboardView: React.FC = () => {
 
             {/* Bottom Actions */}
             <div className="pt-2 border-t border-zinc-800 flex items-center justify-between text-xs font-mono text-zinc-400 shrink-0">
-              <span className="text-[11px]">Peachtree District Championship</span>
+              <span className="text-[11px]">{activeEvent?.name || 'Tournament'}</span>
               <button
                 onClick={() => Actions.navigate('scout')}
                 className="text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 cursor-pointer"
@@ -629,7 +622,17 @@ export const DashboardView: React.FC = () => {
                               </span>
                             </td>
                             <td className="py-1.5 px-3">
-                              <TeamBadge teamNumber={r.teamNumber} highlight1002={isOurTeam} />
+                              <div className="flex items-center gap-2">
+                                <TeamBadge teamNumber={r.teamNumber} highlightActive={isOurTeam} />
+                                <span
+                                  className={`text-xs font-semibold truncate max-w-[110px] sm:max-w-[150px] ${
+                                    isOurTeam ? 'text-amber-300 font-bold' : 'text-zinc-200'
+                                  }`}
+                                  title={r.teamName || getTeamName(r.teamNumber)}
+                                >
+                                  {r.teamName || getTeamName(r.teamNumber)}
+                                </span>
+                              </div>
                             </td>
                             <td className="py-1.5 px-3 text-zinc-400 text-[11px]">
                               {r.record.wins}-{r.record.losses}-{r.record.ties}
@@ -675,7 +678,7 @@ export const DashboardView: React.FC = () => {
                   Upcoming Matches Schedule
                 </span>
                 <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-800/80 px-2 py-0.5 rounded-full">
-                  {upcomingFilter === '1002_ONLY' ? `${fallbackMatches.length} Matches Today` : 'Field Queue'}
+                  {upcomingFilter === '1002_ONLY' ? `${displayUpcoming.length} Matches Today` : 'Field Queue'}
                 </span>
               </div>
 
@@ -689,7 +692,7 @@ export const DashboardView: React.FC = () => {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  Team 1002 Matches
+                  Team {teamInfo.number} ({teamAllMatches.length})
                 </button>
                 <button
                   onClick={() => setUpcomingFilter('ALL_FIELD')}
@@ -699,87 +702,118 @@ export const DashboardView: React.FC = () => {
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
-                  All Field Queue
+                  All Field Queue ({allEventMatches.length})
                 </button>
               </div>
             </div>
 
-            {/* Match List: Focused on the NEXT COUPLE OF MATCHES */}
+            {/* Match List: Focused on Team Schedule or Field Queue */}
             <div className="flex-1 overflow-y-auto pr-1 space-y-2 my-2 no-scrollbar">
               {upcomingFilter === '1002_ONLY' ? (
-                // Sequence of the next couple of matches for Team 1002
-                fallbackMatches.map((m, idx) => {
+                // Sequence of matches for Team
+                displayUpcoming.map((m, idx) => {
                   const isRed = m.redAlliance.teams.includes(teamInfo.number);
+                  const isCompleted = m.status === 'COMPLETED';
+                  const isWinner = (isRed && m.winner === 'red') || (!isRed && m.winner === 'blue');
+                  const isTie = m.winner === 'tie';
                   const partners = isRed
                     ? m.redAlliance.teams.filter((t) => t !== teamInfo.number)
                     : m.blueAlliance.teams.filter((t) => t !== teamInfo.number);
                   const opponents = isRed ? m.blueAlliance.teams : m.redAlliance.teams;
                   const stationLabel = isRed ? 'Red Station' : 'Blue Station';
 
-                  // Dynamic match timeline and projection metadata
-                  const metaByMatch: Record<number, { time: string; prob: string; note: string; tagColor: string }> = {
-                    13: {
-                      time: 'Next Match • In ~18m',
-                      prob: '61% Red Win • Proj. 152-147',
-                      note: 'Station: Red 1 • Status: Queued',
-                      tagColor: 'border-amber-500/50 bg-amber-500/10 text-amber-300',
-                    },
-                    27: {
-                      time: 'In ~1h 35m • ~11:45 AM',
-                      prob: '72% Red Win • Proj. 144-128',
-                      note: 'Station: Red 1 • Status: Scheduled',
-                      tagColor: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
-                    },
-                    42: {
-                      time: 'In ~3h 05m • ~1:50 PM',
-                      prob: '69% Blue Win • Proj. 138-122',
-                      note: 'Station: Blue 1 • Status: Scheduled',
-                      tagColor: 'border-blue-500/40 bg-blue-500/10 text-blue-300',
-                    },
-                    56: {
-                      time: 'In ~4h 30m • ~3:15 PM',
-                      prob: '65% Red Win • Proj. 136-124',
-                      note: 'Station: Red 1 • Status: Scheduled',
-                      tagColor: 'border-purple-500/40 bg-purple-500/10 text-purple-300',
-                    },
-                  };
+                  // Dynamic match timeline and projection calculation
+                  const redEpa = calcAllianceEPA(m.redAlliance.teams);
+                  const blueEpa = calcAllianceEPA(m.blueAlliance.teams);
+                  const isRedFavored = redEpa >= blueEpa;
+                  const winProb = Math.min(95, Math.max(52, Math.round(50 + Math.abs(redEpa - blueEpa) * 0.7)));
+                  const dynamicProb = `${winProb}% ${isRedFavored ? 'Red' : 'Blue'} Win • Proj. ${Math.round(redEpa)}-${Math.round(blueEpa)}`;
 
-                  const meta = metaByMatch[m.matchNumber] || {
-                    time: `In ~${(idx + 1) * 45}m`,
-                    prob: '65% Win Prob',
-                    note: 'Scheduled qualification match',
-                    tagColor: 'border-zinc-700 bg-zinc-800 text-zinc-300',
+                  let dynamicTime = `In ~${(idx + 1) * 35}m`;
+                  if (isCompleted) {
+                    dynamicTime = `Final Result: Red ${m.redAlliance.score} - Blue ${m.blueAlliance.score}`;
+                  } else if (m.scheduledTime) {
+                    const diffMs = m.scheduledTime - Date.now();
+                    if (diffMs <= 0) {
+                      dynamicTime = 'Next Match • Queuing / On Field';
+                    } else if (diffMs < 3600 * 1000) {
+                      dynamicTime = `In ~${Math.max(1, Math.round(diffMs / 60000))}m`;
+                    } else {
+                      const hours = Math.floor(diffMs / 3600000);
+                      const mins = Math.round((diffMs % 3600000) / 60000);
+                      dynamicTime = `In ~${hours}h ${mins}m`;
+                    }
+                  }
+
+                  const meta = {
+                    time: isCompleted ? `Score: ${isRed ? m.redAlliance.score : m.blueAlliance.score} - ${isRed ? m.blueAlliance.score : m.redAlliance.score}` : idx === 0 ? `Next Match • ${dynamicTime}` : dynamicTime,
+                    prob: isCompleted ? `Final • Red ${m.redAlliance.score} - Blue ${m.blueAlliance.score}` : dynamicProb,
+                    note: `Station: ${stationLabel} • ${isCompleted ? (isWinner ? 'Victory' : isTie ? 'Tied' : 'Defeat') : m.status || 'Scheduled'}`,
+                    tagColor:
+                      isCompleted
+                        ? isWinner
+                          ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-300'
+                          : isTie
+                          ? 'border-amber-500/50 bg-amber-500/10 text-amber-300'
+                          : 'border-red-500/50 bg-red-500/10 text-red-300'
+                        : idx === 0
+                        ? 'border-amber-500/50 bg-amber-500/10 text-amber-300'
+                        : isRed
+                        ? 'border-red-500/40 bg-red-500/10 text-red-300'
+                        : 'border-blue-500/40 bg-blue-500/10 text-blue-300',
                   };
 
                   return (
                     <div
                       key={m.key}
                       className={`p-2.5 rounded-xl border transition-all ${
-                        idx === 0
+                        isCompleted
+                          ? isWinner
+                            ? 'bg-emerald-950/15 border-emerald-800/40 hover:border-emerald-700/60'
+                            : 'bg-black/35 border-zinc-800/80 hover:border-zinc-700'
+                          : idx === 0
                           ? isRed
                             ? 'bg-red-950/25 border-red-700/50 shadow-xs'
                             : 'bg-blue-950/25 border-blue-700/50 shadow-xs'
                           : 'bg-black/35 border-zinc-800/80 hover:border-zinc-700'
                       }`}
                     >
-                      {/* Match Row Top: Match badge, Station, Time Horizon */}
+                      {/* Match Row Top: Match badge, Station, Status/Time */}
                       <div className="flex items-center justify-between gap-2 font-mono text-xs mb-2">
                         <div className="flex items-center gap-2">
                           <span
                             className={`px-2 py-0.5 rounded text-[11px] font-black tracking-wider uppercase ${
-                              isRed ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'
+                              m.compLevel === 'FINALS'
+                                ? 'bg-amber-500/30 text-amber-300 border border-amber-500/60'
+                                : m.compLevel === 'PLAYOFF'
+                                ? 'bg-purple-900/60 text-purple-200 border border-purple-500/60'
+                                : isRed
+                                ? 'bg-red-600 text-white'
+                                : 'bg-blue-600 text-white'
                             }`}
                           >
-                            Qual {m.matchNumber}
+                            {formatMatchLabel(m)}
                           </span>
                           <span className="text-[11px] font-bold text-zinc-300">
                             {stationLabel}
                           </span>
-                          {idx === 0 && (
+                          {isCompleted ? (
+                            <span
+                              className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded uppercase ${
+                                isWinner
+                                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                                  : isTie
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                  : 'bg-red-500/20 text-red-300 border border-red-500/40'
+                              }`}
+                            >
+                              {isWinner ? 'WON' : isTie ? 'TIED' : 'LOST'}
+                            </span>
+                          ) : idx === 0 ? (
                             <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-400 text-black animate-pulse">
                               NEXT UP
                             </span>
-                          )}
+                          ) : null}
                         </div>
 
                         <div className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-300">
@@ -800,7 +834,7 @@ export const DashboardView: React.FC = () => {
                             PARTNERS:
                           </span>
                           <div className="flex items-center gap-1.5">
-                            <TeamBadge teamNumber={teamInfo.number} highlight1002 variant={isRed ? 'red' : 'blue'} />
+                            <TeamBadge teamNumber={teamInfo.number} highlightActive variant={isRed ? 'red' : 'blue'} />
                             {partners.map((p) => (
                               <TeamBadge key={p} teamNumber={p} variant={isRed ? 'red' : 'blue'} />
                             ))}
@@ -818,74 +852,111 @@ export const DashboardView: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Match Intel & Statbotics Projection */}
+                      {/* Match Intel & Replay Action */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] font-mono pt-1 border-t border-zinc-800/60">
                         <span className="text-zinc-400 text-[10px] truncate">{meta.note}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border self-start sm:self-auto shrink-0 ${meta.tagColor}`}>
-                          {meta.prob}
-                        </span>
+                        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${meta.tagColor}`}>
+                            {meta.prob}
+                          </span>
+                          {m.videos && m.videos.length > 0 && (
+                            <button
+                              onClick={() => {
+                                Actions.selectReplayMatch(
+                                  m.key,
+                                  m.videos[0].key,
+                                  `${formatMatchLabel(m)} - Team ${teamInfo.number} (${isWinner ? 'W' : 'L'} ${isRed ? m.redAlliance.score : m.blueAlliance.score} - ${isRed ? m.blueAlliance.score : m.redAlliance.score})`
+                                );
+                                Actions.navigate('previous');
+                              }}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-[10px] font-medium transition-colors cursor-pointer"
+                              title="Watch match replay video"
+                            >
+                              <Play size={9} className="text-amber-400 fill-amber-400" />
+                              <span>Replay</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
                 })
               ) : (
                 // All Field Queue View
-                allFieldQueue.map((m) => (
-                  <div
-                    key={m.number}
-                    className={`p-2.5 rounded-xl border font-mono text-xs ${
-                      m.is1002
-                        ? 'bg-red-950/30 border-red-600/50 shadow-xs'
-                        : 'bg-black/35 border-zinc-800/80'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-zinc-800 font-bold text-white text-[11px]">
-                          Qual {m.number}
-                        </span>
-                        {m.is1002 && (
-                          <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-black">
-                            TEAM 1002 MATCH
-                          </span>
-                        )}
-                        <span className="text-zinc-400 text-[11px]">{m.note}</span>
-                      </div>
-                      <span className="text-zinc-300 font-bold text-[11px]">{m.time}</span>
-                    </div>
+                allFieldQueue.map((m) => {
+                  const mLabel = m.match ? formatMatchLabel(m.match) : `Qual ${m.number}`;
+                  const isPlayoff = m.match?.compLevel === 'PLAYOFF';
+                  const isFinals = m.match?.compLevel === 'FINALS';
 
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="p-1.5 rounded bg-red-950/30 border border-red-900/40 flex items-center justify-between">
-                        <span className="text-[10px] text-red-400 font-bold">RED:</span>
-                        <div className="flex items-center gap-1">
-                          {m.red.map((t) => (
-                            <TeamBadge key={t} teamNumber={t} highlight1002={t === 1002} variant="red" />
-                          ))}
+                  return (
+                    <div
+                      key={m.match?.key || m.number}
+                      className={`p-2.5 rounded-xl border font-mono text-xs ${
+                        m.isOurTeam
+                          ? 'bg-amber-950/20 border-amber-500/50 shadow-xs'
+                          : 'bg-black/35 border-zinc-800/80'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded font-bold text-[11px] ${
+                              isFinals
+                                ? 'bg-amber-500/25 text-amber-300 border border-amber-500/50'
+                                : isPlayoff
+                                ? 'bg-purple-900/50 text-purple-200 border border-purple-500/50'
+                                : 'bg-zinc-800 text-white'
+                            }`}
+                          >
+                            {mLabel}
+                          </span>
+                          {m.isOurTeam && (
+                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-400 text-black">
+                              TEAM {teamInfo.number} MATCH
+                            </span>
+                          )}
+                          <span className="text-zinc-400 text-[11px]">{m.note}</span>
                         </div>
+                        <span className="text-zinc-300 font-bold text-[11px]">{m.time}</span>
                       </div>
-                      <div className="p-1.5 rounded bg-blue-950/30 border border-blue-900/40 flex items-center justify-between">
-                        <span className="text-[10px] text-blue-400 font-bold">BLUE:</span>
-                        <div className="flex items-center gap-1">
-                          {m.blue.map((t) => (
-                            <TeamBadge key={t} teamNumber={t} highlight1002={t === 1002} variant="blue" />
-                          ))}
+
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="p-1.5 rounded bg-red-950/30 border border-red-900/40 flex items-center justify-between">
+                          <span className="text-[10px] text-red-400 font-bold">RED:</span>
+                          <div className="flex items-center gap-1">
+                            {m.red.map((t) => (
+                              <TeamBadge key={t} teamNumber={t} highlightActive={t === teamInfo.number} variant="red" />
+                            ))}
+                          </div>
+                        </div>
+                        <div className="p-1.5 rounded bg-blue-950/30 border border-blue-900/40 flex items-center justify-between">
+                          <span className="text-[10px] text-blue-400 font-bold">BLUE:</span>
+                          <div className="flex items-center gap-1">
+                            {m.blue.map((t) => (
+                              <TeamBadge key={t} teamNumber={t} highlightActive={t === teamInfo.number} variant="blue" />
+                            ))}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
             {/* Bottom Actions */}
             <div className="pt-2 border-t border-zinc-800 flex items-center justify-between text-xs font-mono text-zinc-400 shrink-0">
-              <span className="text-[11px]">Showing {fallbackMatches.length} upcoming matches for Friday</span>
+              <span className="text-[11px]">
+                {isAllMatchesCompleted
+                  ? `${teamAllMatches.length} Matches Completed • Official TBA Results`
+                  : `Showing ${displayUpcoming.length} matches in current queue`}
+              </span>
               <button
                 onClick={() => Actions.navigate('schedule')}
                 className="text-blue-400 hover:text-blue-300 font-bold flex items-center gap-1 cursor-pointer"
               >
                 <span>Complete Match Schedule</span>
-                <ChevronRight size={12} />
+                <ChevronRight size={14} />
               </button>
             </div>
           </div>
@@ -928,128 +999,131 @@ export const DashboardView: React.FC = () => {
               </div>
             </div>
 
-            {/* Arena Field & Queuing State */}
-            <div className="grid grid-cols-2 gap-2.5 my-2">
-              <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 flex items-center justify-between">
-                <div>
-                  <div className="text-zinc-500 text-[10px] uppercase font-bold tracking-wider">On Field</div>
-                  <div className="text-white text-base sm:text-lg font-black mt-0.5 font-mono">Qual 12</div>
+            {/* Arena Field & Queuing State + Call Banner + Simulator Container */}
+            <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-2 my-1.5 pr-1">
+              {/* Arena Field & Queuing State */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2 rounded-xl bg-black/40 border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-zinc-500 text-[9px] uppercase font-bold tracking-wider">On Field</div>
+                    <div className="text-white text-base font-black font-mono">Qual 12</div>
+                  </div>
+                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                 </div>
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
-              </div>
 
-              <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 flex items-center justify-between">
-                <div>
-                  <div className="text-amber-400/90 text-[10px] uppercase font-bold tracking-wider">Now Queuing</div>
-                  <div className="text-amber-300 text-base sm:text-lg font-black mt-0.5 font-mono">Qual 13</div>
+                <div className="p-2 rounded-xl bg-black/40 border border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <div className="text-amber-400/90 text-[9px] uppercase font-bold tracking-wider">Now Queuing</div>
+                    <div className="text-amber-300 text-base font-black font-mono">Qual 13</div>
+                  </div>
+                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
                 </div>
-                <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
               </div>
-            </div>
 
-            {/* Primary Pulse Active Queue Call Banner - Official FIRST Pulse Phrasing */}
-            <div className={`p-3 rounded-xl border flex flex-col justify-center gap-1.5 my-1 ${pulse.badgeColor}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  {pulse.iconType === 'alert' ? (
-                    <AlertCircle size={18} className="text-orange-400 shrink-0 animate-bounce" />
-                  ) : pulse.iconType === 'check' ? (
-                    <CheckCircle size={18} className="text-zinc-400 shrink-0" />
-                  ) : (
-                    <Clock size={18} className="text-amber-400 shrink-0 animate-pulse" />
-                  )}
-                  <span className="text-[10px] font-black uppercase tracking-widest text-zinc-300">
-                    Pulse Queue Call
-                  </span>
+              {/* Primary Pulse Active Queue Call Banner - Official FIRST Pulse Phrasing */}
+              <div className={`p-2.5 rounded-xl border flex flex-col justify-center gap-1.5 ${pulse.badgeColor}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {pulse.iconType === 'alert' ? (
+                      <AlertCircle size={16} className="text-orange-400 shrink-0 animate-bounce" />
+                    ) : pulse.iconType === 'check' ? (
+                      <CheckCircle size={16} className="text-zinc-400 shrink-0" />
+                    ) : (
+                      <Clock size={16} className="text-amber-400 shrink-0 animate-pulse" />
+                    )}
+                    <span className="text-[10px] font-black uppercase tracking-widest text-zinc-300">
+                      Pulse Queue Call
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-zinc-300/80">Team {teamInfo.number}</span>
                 </div>
-                <span className="text-[10px] font-bold text-zinc-300/80">Team 1002</span>
+
+                {/* Huge, crisp callout matching FIRST Pulse */}
+                <div className="text-base sm:text-lg md:text-xl font-black uppercase tracking-wide text-white drop-shadow-xs">
+                  {pulse.phrase}
+                </div>
+
+                {/* Instructions for Pit Crew */}
+                <div className="text-[11px] text-zinc-200/90 font-medium">
+                  {pulse.subtext}
+                </div>
               </div>
 
-              {/* Huge, crisp callout matching FIRST Pulse */}
-              <div className="text-lg sm:text-xl md:text-2xl font-black uppercase tracking-wide text-white drop-shadow-xs">
-                {pulse.phrase}
-              </div>
+              {/* Interactive Pulse State Selector / Simulator */}
+              <div className="p-2 rounded-xl bg-black/40 border border-zinc-800/80 space-y-1.5">
+                <div className="flex items-center justify-between text-[10px] text-zinc-400">
+                  <span className="font-bold uppercase tracking-wider">Pulse State Simulator:</span>
+                  <span className="text-zinc-500">Click to preview states</span>
+                </div>
+                <div className="grid grid-cols-5 gap-1 text-[10px] font-bold text-center">
+                  <button
+                    onClick={() => setPulseMode('AUTO')}
+                    className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
+                      pulseMode === 'AUTO'
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title="Automatic state driven by live countdown timer"
+                  >
+                    Auto
+                  </button>
+                  <button
+                    onClick={() => setPulseMode('QUEUE_5MIN')}
+                    className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
+                      pulseMode === 'QUEUE_5MIN'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title="Preview 'Queue in 5 min' state"
+                  >
+                    5 Min
+                  </button>
+                  <button
+                    onClick={() => setPulseMode('ON_DECK')}
+                    className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
+                      pulseMode === 'ON_DECK'
+                        ? 'bg-orange-600 text-white shadow-xs'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title="Preview 'On Deck' state"
+                  >
+                    On Deck
+                  </button>
+                  <button
+                    onClick={() => setPulseMode('NOW_QUEUING')}
+                    className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
+                      pulseMode === 'NOW_QUEUING'
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title="Preview 'Now Queuing' state"
+                  >
+                    Queuing
+                  </button>
+                  <button
+                    onClick={() => setPulseMode('NO_MATCHES')}
+                    className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
+                      pulseMode === 'NO_MATCHES'
+                        ? 'bg-zinc-600 text-white shadow-xs'
+                        : 'bg-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                    title="Preview 'No matches remaining today...' state"
+                  >
+                    Finished
+                  </button>
+                </div>
 
-              {/* Instructions for Pit Crew */}
-              <div className="text-[11px] text-zinc-200/90 font-medium">
-                {pulse.subtext}
-              </div>
-            </div>
-
-            {/* Interactive Pulse State Selector / Simulator */}
-            <div className="p-2 rounded-xl bg-black/40 border border-zinc-800/80 space-y-1.5 my-1">
-              <div className="flex items-center justify-between text-[10px] text-zinc-400">
-                <span className="font-bold uppercase tracking-wider">Pulse State Simulator:</span>
-                <span className="text-zinc-500">Click to preview states</span>
-              </div>
-              <div className="grid grid-cols-5 gap-1 text-[10px] font-bold text-center">
-                <button
-                  onClick={() => setPulseMode('AUTO')}
-                  className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
-                    pulseMode === 'AUTO'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                  title="Automatic state driven by live countdown timer"
-                >
-                  Auto
-                </button>
-                <button
-                  onClick={() => setPulseMode('QUEUE_5MIN')}
-                  className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
-                    pulseMode === 'QUEUE_5MIN'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                  title="Preview 'Queue in 5 min' state"
-                >
-                  5 Min
-                </button>
-                <button
-                  onClick={() => setPulseMode('ON_DECK')}
-                  className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
-                    pulseMode === 'ON_DECK'
-                      ? 'bg-orange-600 text-white shadow-xs'
-                      : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                  title="Preview 'On Deck' state"
-                >
-                  On Deck
-                </button>
-                <button
-                  onClick={() => setPulseMode('NOW_QUEUING')}
-                  className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
-                    pulseMode === 'NOW_QUEUING'
-                      ? 'bg-amber-600 text-white shadow-xs'
-                      : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                  title="Preview 'Now Queuing' state"
-                >
-                  Queuing
-                </button>
-                <button
-                  onClick={() => setPulseMode('NO_MATCHES')}
-                  className={`px-1.5 py-1 rounded transition-all cursor-pointer truncate ${
-                    pulseMode === 'NO_MATCHES'
-                      ? 'bg-zinc-600 text-white shadow-xs'
-                      : 'bg-zinc-800 text-zinc-400 hover:text-white'
-                  }`}
-                  title="Preview 'No matches remaining today...' state"
-                >
-                  Finished
-                </button>
-              </div>
-
-              {/* Audible Voice Callout Trigger */}
-              <div className="pt-1 flex items-center justify-between">
-                <span className="text-[10px] text-zinc-400">Pit Audio:</span>
-                <button
-                  onClick={() => handleTestVoiceCall(pulse.phrase, pulse.subtext)}
-                  className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[10px] font-bold cursor-pointer transition-colors"
-                >
-                  <Mic size={11} />
-                  <span>Broadcast Pit Voice Callout</span>
-                </button>
+                {/* Audible Voice Callout Trigger */}
+                <div className="pt-1 flex items-center justify-between">
+                  <span className="text-[10px] text-zinc-400">Pit Audio:</span>
+                  <button
+                    onClick={() => handleTestVoiceCall(pulse.phrase, pulse.subtext)}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-[10px] font-bold cursor-pointer transition-colors"
+                  >
+                    <Mic size={11} />
+                    <span>Broadcast Pit Voice Callout</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1290,6 +1364,40 @@ export const DashboardView: React.FC = () => {
 
   return (
     <div id="dashboard-view" className="space-y-2 animate-fade-in pb-8">
+      {/* Competition Simulation Banner (Day 2 of PCH DCMP 2026 at 11:30 AM) */}
+      {demoMode?.enabled && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 text-xs shadow-xs">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+            <span className="font-extrabold text-emerald-300 uppercase tracking-wider text-[11px]">
+              Pulse Simulation Active:
+            </span>
+            <span className="text-zinc-200 font-medium">
+              Team 1002 CircuitRunners • Day 2 of PCH DCMP 2026 @ 11:30 AM
+            </span>
+            <span className="text-zinc-500 hidden sm:inline">•</span>
+            <span className="text-amber-300 font-mono font-bold hidden sm:inline">
+              Qual 13 Queuing (Station Red 1)
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <button
+              onClick={() => Actions.setSetupModalOpen(true)}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 transition-colors cursor-pointer"
+            >
+              Setup
+            </button>
+            <button
+              onClick={() => Actions.disableDemoMode()}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-zinc-800 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+            >
+              Exit Demo
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Modular Layout Bar */}
       <ModularLayoutToolbar
         viewName="Dashboard"
@@ -1308,7 +1416,7 @@ export const DashboardView: React.FC = () => {
         className="grid grid-cols-12 gap-2 sm:gap-3 items-stretch"
         style={{
           gridAutoFlow: 'dense',
-          gridAutoRows: 'minmax(185px, auto)',
+          gridAutoRows: 'minmax(62px, auto)',
         }}
       >
         {visibleSegments.map((seg) => (

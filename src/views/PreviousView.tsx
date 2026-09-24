@@ -7,7 +7,7 @@
  * Fully modular segments with resizable column spans and reordering.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Film,
   Play,
@@ -29,20 +29,28 @@ import { ModularSegment } from '../components/ModularSegment';
 import { ModularLayoutToolbar } from '../components/ModularLayoutToolbar';
 import { TeamBadge } from '../components/TeamBadge';
 import { PlaceholderVideoFeed } from '../components/PlaceholderVideoFeed';
+import { formatMatchLabel, sortTournamentMatches } from '../utils/matchUtils';
 
 const DEFAULT_WATCH_SEGMENTS: SegmentConfig[] = [
-  { id: 'video_screen', title: 'Match Video Replay', colSpan: 'two-thirds', order: 0, visible: true },
-  { id: 'match_selector', title: 'Completed Matches Playlist', colSpan: 'third', order: 1, visible: true },
-  { id: 'phase_controls', title: 'Playback Controls', colSpan: 'half', order: 2, visible: true },
-  { id: 'match_summary', title: 'Scorecard & Match Telemetry', colSpan: 'half', order: 3, visible: true },
+  { id: 'video_screen', title: 'Match Video Replay', colSpan: 'two-thirds', heightMultiplier: 1.5, order: 0, visible: true },
+  { id: 'match_selector', title: 'Completed Matches Playlist', colSpan: 'third', heightMultiplier: 1.5, order: 1, visible: true },
+  { id: 'phase_controls', title: 'Playback Controls', colSpan: 'half', heightMultiplier: 1, order: 2, visible: true },
+  { id: 'match_summary', title: 'Scorecard & Match Telemetry', colSpan: 'half', heightMultiplier: 1, order: 3, visible: true },
 ];
 
 export const PreviousView: React.FC = () => {
   const theme = usePitState(Selectors.themeConfig);
+  const teamInfo = usePitState(Selectors.teamInfo);
   const videoReplay = usePitState(Selectors.videoReplay);
+  const activeEvent = usePitState(Selectors.activeEvent);
   const matches = usePitState(Selectors.matches);
   const [isPulling, setIsPulling] = useState(false);
   const [pullMessage, setPullMessage] = useState<string | null>(null);
+
+  // Automatically sync TBA replays when event or team changes
+  useEffect(() => {
+    Actions.pullTbaMatches();
+  }, [activeEvent?.key, teamInfo.number]);
 
   // Modular Layout Hook
   const {
@@ -58,7 +66,8 @@ export const PreviousView: React.FC = () => {
     applyPreset,
   } = useModularLayout('watch_replay_studio', DEFAULT_WATCH_SEGMENTS);
 
-  const completedMatches = matches.filter((m) => m.status === 'COMPLETED');
+  const rawCompletedMatches = matches.filter((m) => m.status === 'COMPLETED');
+  const completedMatches = sortTournamentMatches(rawCompletedMatches);
 
   const handlePullTba = async () => {
     setIsPulling(true);
@@ -76,13 +85,13 @@ export const PreviousView: React.FC = () => {
 
   const handleSelectMatch = (m: MatchModel) => {
     if (m.videos && m.videos.length > 0) {
-      const isBlue = m.blueAlliance.teams.includes(1002);
+      const isBlue = m.blueAlliance.teams.includes(teamInfo.number);
       const isWinner = (isBlue && m.winner === 'blue') || (!isBlue && m.winner === 'red');
       const scoreStr = isWinner ? 'W' : 'L';
       Actions.selectReplayMatch(
         m.key,
         m.videos[0].key,
-        `Quals ${m.matchNumber} - Team 1002 (${scoreStr} ${isBlue ? m.blueAlliance.score : m.redAlliance.score} - ${isBlue ? m.redAlliance.score : m.blueAlliance.score})`
+        `${formatMatchLabel(m)} - Team ${teamInfo.number} (${scoreStr} ${isBlue ? m.blueAlliance.score : m.redAlliance.score} - ${isBlue ? m.redAlliance.score : m.blueAlliance.score})`
       );
     }
   };
@@ -111,26 +120,40 @@ export const PreviousView: React.FC = () => {
             <div className="p-3 bg-black/40 border-b border-zinc-800 flex items-center justify-between text-xs font-mono shrink-0">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                <span className="font-bold text-white truncate">{videoReplay.matchTitle || 'Match Video Feed'}</span>
+                <span className="font-bold text-white truncate max-w-[220px] sm:max-w-[420px]">
+                  {videoReplay.matchTitle || 'Match Video Feed'}
+                </span>
+                {videoReplay.youtubeId && (
+                  <a
+                    href={`https://www.youtube.com/watch?v=${videoReplay.youtubeId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-[10px] text-zinc-400 hover:text-white bg-zinc-800/90 px-2 py-0.5 rounded border border-zinc-700 transition-colors ml-1"
+                    title="Open replay in YouTube"
+                  >
+                    <ExternalLink size={10} />
+                    <span>Watch External</span>
+                  </a>
+                )}
               </div>
-              <span className="text-zinc-500 text-[10px]">High-Definition 1080p Stream</span>
+              <span className="text-zinc-500 text-[10px]">Official Match Video</span>
             </div>
 
-            {/* Video Player - Responsive Height */}
-            <div className="flex-1 min-h-0 bg-black relative flex flex-col items-center justify-center overflow-hidden">
+            {/* Video Player - Proportional 16:9 responsive frame */}
+            <div className="w-full aspect-video max-h-[360px] sm:max-h-[400px] bg-black relative flex flex-col items-center justify-center overflow-hidden mx-auto">
               {videoReplay.youtubeId ? (
                 <iframe
                   key={videoReplay.youtubeId}
-                  src={`https://www.youtube-nocookie.com/embed/${videoReplay.youtubeId}?autoplay=1&enablejsapi=1&origin=${window.location.origin}`}
+                  src={`https://www.youtube.com/embed/${videoReplay.youtubeId}?autoplay=1&playsinline=1&rel=0`}
                   title={videoReplay.matchTitle}
-                  className="w-full h-full border-0 absolute inset-0"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  className="w-full h-full border-0 absolute inset-0 z-10"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
                 />
               ) : (
                 <PlaceholderVideoFeed
                   title={videoReplay.matchTitle || 'Match Replay Archive'}
-                  matchName={videoReplay.matchTitle || 'Peachtree District • Match Replay Feed'}
+                  matchName={videoReplay.matchTitle || `${activeEvent?.name || activeEvent?.shortName || 'Tournament'} • Match Replay Feed`}
                   isLive={false}
                 />
               )}
@@ -170,7 +193,7 @@ export const PreviousView: React.FC = () => {
               ) : (
                 completedMatches.map((m) => {
                   const isSelected = m.key === videoReplay.activeMatchKey;
-                  const isBlue = m.blueAlliance.teams.includes(1002);
+                  const isBlue = m.blueAlliance.teams.includes(teamInfo.number);
                   const isWinner =
                     (isBlue && m.winner === 'blue') || (!isBlue && m.winner === 'red');
                   const hasVideo = m.videos && m.videos.length > 0;
@@ -187,7 +210,7 @@ export const PreviousView: React.FC = () => {
                     >
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-white">Qual {m.matchNumber}</span>
+                          <span className="font-bold text-white">{formatMatchLabel(m)}</span>
                           <span
                             className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                               isWinner
@@ -291,7 +314,7 @@ export const PreviousView: React.FC = () => {
           );
         }
 
-        const isBlue = activeMatch.blueAlliance.teams.includes(1002);
+        const isBlue = activeMatch.blueAlliance.teams.includes(teamInfo.number);
         const blueScore = activeMatch.blueAlliance.score || 0;
         const redScore = activeMatch.redAlliance.score || 0;
         const winner = activeMatch.winner;
@@ -389,7 +412,7 @@ export const PreviousView: React.FC = () => {
         className="grid grid-cols-12 gap-2 sm:gap-3 items-stretch"
         style={{
           gridAutoFlow: 'dense',
-          gridAutoRows: 'minmax(185px, auto)',
+          gridAutoRows: 'minmax(62px, auto)',
         }}
       >
         {visibleSegments.map((seg) => (

@@ -89,11 +89,11 @@ export function colSpanToClass(colSpan: ColSpan): string {
 }
 
 export function getSegmentHeightClass(colSpan?: ColSpan, heightMultiplier: HeightMultiplier | number = 1): string {
-  if (heightMultiplier === 0.5) return 'h-[185px]';
-  if (heightMultiplier === 0.75) return 'h-[280px]';
-  if (heightMultiplier === 1.5) return 'h-[579px]';
-  if (heightMultiplier === 2) return 'h-[776px]';
-  return 'h-[382px]';
+  if (heightMultiplier === 0.5) return 'h-[62px]';
+  if (heightMultiplier === 0.75) return 'h-[95px]';
+  if (heightMultiplier === 1.5) return 'h-[202px]';
+  if (heightMultiplier === 2) return 'h-[272px]';
+  return 'h-[132px]';
 }
 
 export function heightMultiplierToRowSpan(multiplier: HeightMultiplier | number = 1): number {
@@ -112,11 +112,11 @@ export function rowSpanToHeightMultiplier(rowSpan: number): HeightMultiplier {
 }
 
 export function getSegmentHeightPx(heightMultiplier: HeightMultiplier | number = 1): number {
-  if (heightMultiplier === 0.5) return 185;
-  if (heightMultiplier === 0.75) return 280;
-  if (heightMultiplier === 1.5) return 579;
-  if (heightMultiplier === 2) return 776;
-  return 382;
+  if (heightMultiplier === 0.5) return 62;
+  if (heightMultiplier === 0.75) return 95;
+  if (heightMultiplier === 1.5) return 202;
+  if (heightMultiplier === 2) return 272;
+  return 132;
 }
 
 export function useModularLayout(viewKey: string, initialDefaults: SegmentConfig[]) {

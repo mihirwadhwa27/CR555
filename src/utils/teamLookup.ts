@@ -1,7 +1,10 @@
 /**
- * Global FRC Team Number and Name Directory
- * Team 1002 CircuitRunners
+ * Global Dynamic FRC Team Directory & Metadata Resolver
+ * Real-time dynamic lookup powered by The Blue Alliance
  */
+
+import { useState, useEffect } from 'react';
+import { CacheManager } from '../services';
 
 export interface TeamMetadata {
   name: string;
@@ -9,63 +12,169 @@ export interface TeamMetadata {
   state?: string;
 }
 
-export const FRC_TEAM_DIRECTORY: Record<number, TeamMetadata> = {
-  1002: { name: 'CircuitRunners', city: 'Marietta', state: 'GA' },
-  1771: { name: 'North Gwinnett Robotics', city: 'Suwanee', state: 'GA' },
-  1833: { name: 'Screaming Eagles', city: 'Atlanta', state: 'GA' },
-  4509: { name: 'Mechanical Bulls', city: 'Suwanee', state: 'GA' },
-  4188: { name: 'Columbus Space Program', city: 'Columbus', state: 'GA' },
-  1261: { name: 'Robo Lions', city: 'Suwanee', state: 'GA' },
-  8080: { name: 'Double Zero', city: 'Roswell', state: 'GA' },
-  6705: { name: 'Wildcat Robotics', city: 'Dunwoody', state: 'GA' },
-  6829: { name: 'VIPER', city: 'Marietta', state: 'GA' },
-  3344: { name: 'Oak Mountain Robotics', city: 'Birmingham', state: 'AL' },
-  6919: { name: 'The Commodores', city: 'Albany', state: 'GA' },
-  3635: { name: 'Flying Decibels', city: 'Atlanta', state: 'GA' },
-  1648: { name: 'G3 Robotics', city: 'Atlanta', state: 'GA' },
-  4026: { name: 'Decatur Robotics', city: 'Decatur', state: 'GA' },
-  1414: { name: 'IHOT (Intelligent Heavy Objects Tracking)', city: 'Atlanta', state: 'GA' },
-  4189: { name: 'Charger Robotics', city: 'Columbus', state: 'GA' },
-  2974: { name: 'Walton Robotics', city: 'Marietta', state: 'GA' },
-  8736: { name: 'G-Force', city: 'Gwinnett', state: 'GA' },
-  9477: { name: 'Robotic Rebellion', city: 'Alpharetta', state: 'GA' },
-  8866: { name: 'Phoenix', city: 'Duluth', state: 'GA' },
-  1746: { name: 'OTTO', city: 'Norcross', state: 'GA' },
-  6023: { name: 'Discontinuous Innovation', city: 'Atlanta', state: 'GA' },
-  1683: { name: 'Techno Titans', city: 'Johns Creek', state: 'GA' },
-  5109: { name: 'Tech-Dawgs', city: 'Canton', state: 'GA' },
-  4910: { name: 'East Cobb Robotics', city: 'Marietta', state: 'GA' },
-  1102: { name: 'M’Aiken Magic', city: 'Aiken', state: 'SC' },
-  832:  { name: 'OSCAR', city: 'Roswell', state: 'GA' },
-  1748: { name: 'ElectroEagles', city: 'Norcross', state: 'GA' },
-  281:  { name: 'EnTech GreenVillains', city: 'Greenville', state: 'SC' },
-  342:  { name: 'Burning Magnetos', city: 'North Charleston', state: 'SC' },
-  4451: { name: 'ROBOTZ Garage', city: 'Graniteville', state: 'SC' },
-  254:  { name: 'The Cheesy Poofs', city: 'San Jose', state: 'CA' },
-  1678: { name: 'Citrus Circuits', city: 'Davis', state: 'CA' },
-  1323: { name: 'MadTown Robotics', city: 'Madera', state: 'CA' },
-  2056: { name: 'OP Robotics', city: 'Stoney Creek', state: 'ON' },
-  118:  { name: 'The Robonauts', city: 'Houston', state: 'TX' },
-  1114: { name: 'Simbotics', city: 'St. Catharines', state: 'ON' },
-  2910: { name: 'Jack in the Bot', city: 'Mill Creek', state: 'WA' },
-  27:   { name: 'Team RUSH', city: 'Clarkston', state: 'MI' },
-  33:   { name: 'Killer Bees', city: 'Auburn Hills', state: 'MI' },
-  67:   { name: 'The HOT Team', city: 'Highland', state: 'MI' },
-  148:  { name: 'Robowranglers', city: 'Greenville', state: 'TX' },
-};
+// In-memory dynamic team cache
+export const FRC_TEAM_DIRECTORY: Record<number, TeamMetadata> = {};
 
-export function getTeamName(teamNumber: number): string {
-  if (FRC_TEAM_DIRECTORY[teamNumber]) {
-    return FRC_TEAM_DIRECTORY[teamNumber].name;
-  }
-  return `Team ${teamNumber}`;
+const pendingFetches = new Set<number>();
+const listeners = new Set<() => void>();
+
+function notifyListeners() {
+  listeners.forEach((fn) => {
+    try {
+      fn();
+    } catch {}
+  });
 }
 
-export function getTeamFullInfo(teamNumber: number): string {
-  const info = FRC_TEAM_DIRECTORY[teamNumber];
-  if (info) {
-    const loc = info.city && info.state ? ` (${info.city}, ${info.state})` : '';
-    return `${teamNumber} - ${info.name}${loc}`;
+/**
+ * Register or update metadata for a specific team
+ */
+export function registerTeamMetadata(teamNumber: number, meta: Partial<TeamMetadata>) {
+  if (!teamNumber || isNaN(teamNumber)) return;
+  const existing: Partial<TeamMetadata> = FRC_TEAM_DIRECTORY[teamNumber] || {};
+  const newName = meta.name && !meta.name.match(/^Team \d+$/i) ? meta.name : existing.name || `Team ${teamNumber}`;
+
+  FRC_TEAM_DIRECTORY[teamNumber] = {
+    name: newName,
+    city: meta.city !== undefined ? meta.city : existing.city,
+    state: meta.state !== undefined ? meta.state : existing.state,
+  };
+
+  CacheManager.set(
+    'tba',
+    'teams',
+    `team_${teamNumber}`,
+    {
+      nickname: FRC_TEAM_DIRECTORY[teamNumber].name,
+      city: FRC_TEAM_DIRECTORY[teamNumber].city,
+      stateProv: FRC_TEAM_DIRECTORY[teamNumber].state,
+    },
+    86400
+  );
+
+  notifyListeners();
+}
+
+/**
+ * Bulk register metadata for multiple teams (e.g. from event rosters or rankings)
+ */
+export function registerTeamsBulk(teams: Array<{ teamNumber: number; name?: string; city?: string; state?: string }>) {
+  if (!Array.isArray(teams) || teams.length === 0) return;
+  let hasChanges = false;
+
+  for (const t of teams) {
+    if (!t.teamNumber || isNaN(t.teamNumber)) continue;
+    const existing = FRC_TEAM_DIRECTORY[t.teamNumber];
+    const newName = t.name && !t.name.match(/^Team \d+$/i) ? t.name : existing?.name || `Team ${t.teamNumber}`;
+
+    if (!existing || existing.name !== newName || existing.city !== t.city || existing.state !== t.state) {
+      FRC_TEAM_DIRECTORY[t.teamNumber] = {
+        name: newName,
+        city: t.city !== undefined ? t.city : existing?.city,
+        state: t.state !== undefined ? t.state : existing?.state,
+      };
+
+      CacheManager.set(
+        'tba',
+        'teams',
+        `team_${t.teamNumber}`,
+        {
+          nickname: FRC_TEAM_DIRECTORY[t.teamNumber].name,
+          city: FRC_TEAM_DIRECTORY[t.teamNumber].city,
+          stateProv: FRC_TEAM_DIRECTORY[t.teamNumber].state,
+        },
+        86400
+      );
+      hasChanges = true;
+    }
   }
-  return `Team ${teamNumber}`;
+
+  if (hasChanges) {
+    notifyListeners();
+  }
+}
+
+/**
+ * Fetch and return team metadata, automatically dispatching a live TBA fetch if missing
+ */
+export function getTeamMetadata(teamNumber: number): TeamMetadata {
+  if (!teamNumber || isNaN(teamNumber)) return { name: 'Unknown Team' };
+
+  // 1. Check in-memory dynamic cache
+  const info = FRC_TEAM_DIRECTORY[teamNumber];
+  if (info && info.name && !info.name.match(/^Team \d+$/i)) {
+    return info;
+  }
+
+  // 2. Check CacheManager persistent storage
+  const cachedTeam = CacheManager.get<{ nickname?: string; city?: string; stateProv?: string }>('tba', 'teams', `team_${teamNumber}`);
+  if (cachedTeam?.data?.nickname && !cachedTeam.data.nickname.match(/^Team \d+$/i)) {
+    FRC_TEAM_DIRECTORY[teamNumber] = {
+      name: cachedTeam.data.nickname,
+      city: cachedTeam.data.city,
+      state: cachedTeam.data.stateProv,
+    };
+    return FRC_TEAM_DIRECTORY[teamNumber];
+  }
+
+  // 3. Trigger asynchronous background fetch from TBA server proxy
+  if (typeof window !== 'undefined' && !pendingFetches.has(teamNumber)) {
+    pendingFetches.add(teamNumber);
+    fetch(`/api/tba/team/${teamNumber}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data && (data.nickname || data.name)) {
+          const nick = data.nickname || data.name;
+          registerTeamMetadata(teamNumber, {
+            name: nick,
+            city: data.city,
+            state: data.stateProv,
+          });
+        }
+      })
+      .catch((err) => {
+        console.warn(`[TeamLookup] Live fetch failed for team ${teamNumber}:`, err);
+      })
+      .finally(() => {
+        pendingFetches.delete(teamNumber);
+      });
+  }
+
+  return info || { name: `Team ${teamNumber}` };
+}
+
+/**
+ * Get just the team nickname/name
+ */
+export function getTeamName(teamNumber: number): string {
+  return getTeamMetadata(teamNumber).name;
+}
+
+/**
+ * Get full formatted team display e.g. "6829 - Ignite Robotics (Suwanee, Georgia)"
+ */
+export function getTeamFullInfo(teamNumber: number): string {
+  const meta = getTeamMetadata(teamNumber);
+  const loc = meta.city && meta.state ? ` (${meta.city}, ${meta.state})` : meta.city ? ` (${meta.city})` : '';
+  return `${teamNumber} - ${meta.name}${loc}`;
+}
+
+/**
+ * React hook that automatically updates component when live team data arrives
+ */
+export function useTeamMetadata(teamNumber: number): TeamMetadata {
+  const [meta, setMeta] = useState<TeamMetadata>(() => getTeamMetadata(teamNumber));
+
+  useEffect(() => {
+    setMeta(getTeamMetadata(teamNumber));
+    const onChange = () => {
+      setMeta(getTeamMetadata(teamNumber));
+    };
+    listeners.add(onChange);
+    return () => {
+      listeners.delete(onChange);
+    };
+  }, [teamNumber]);
+
+  return meta;
 }

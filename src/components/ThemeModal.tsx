@@ -25,6 +25,8 @@ import { ThemeService, calculateContrastRatio } from '../services';
 export const ThemeModal: React.FC = () => {
   const isOpen = usePitState(Selectors.isThemeModalOpen);
   const theme = usePitState(Selectors.themeConfig);
+  const teamInfo = usePitState(Selectors.teamInfo);
+  const activeEvent = usePitState(Selectors.activeEvent);
   const [activeSubTab, setActiveSubTab] = useState<'presets' | 'palette' | 'typography'>('presets');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedJson, setCopiedJson] = useState(false);
@@ -435,7 +437,7 @@ export const ThemeModal: React.FC = () => {
                     className="text-xs text-zinc-400 mt-1"
                     style={{ fontFamily: font === 'System' ? 'sans-serif' : font }}
                   >
-                    FRC 1002 • Peachtree District • Qual 42 • 14:28 Remaining
+                    FRC {teamInfo.number} • {activeEvent?.shortName || activeEvent?.name || 'Tournament'} • Qual 42 • 14:28 Remaining
                   </div>
                 </div>
                 {theme.font === font && (

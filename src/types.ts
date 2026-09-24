@@ -413,6 +413,8 @@ export interface ApplicationState {
   config: {
     teamNumber: number;
     verifiedTeamName: string;
+    verifiedTeamCity?: string;
+    verifiedTeamState?: string;
     selectedEventKey: string;
     recentEvents: Array<{ key: string; name: string; year: number }>;
     tenFootMode: boolean;
@@ -421,6 +423,14 @@ export interface ApplicationState {
     corsProxyUrl: string;
     nexusManualEventKey: string;
     theme: ThemeConfig;
+    demoMode?: {
+      enabled: boolean;
+      dayLabel: string;
+      timeString: string;
+      simulatedTimeOffset: number;
+      eventKey: string;
+      teamNumber: number;
+    };
   };
 
   activeEvent: {
@@ -467,6 +477,7 @@ export interface ApplicationState {
 
   ui: {
     activeTab: NavigationTab;
+    isSetupModalOpen: boolean;
     isThemeModalOpen: boolean;
     isStrategyModalOpen: boolean;
     isStrategyUnlocked: boolean;

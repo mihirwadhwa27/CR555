@@ -684,7 +684,7 @@ export const PlayoffsView: React.FC = () => {
                   <div className="text-center space-y-1">
                     <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold font-mono">
                       <Trophy size={14} />
-                      <span>Peachtree District Championship Finals</span>
+                      <span>{activeEvent?.name || 'Tournament'} Finals</span>
                     </div>
                     <h3 className="text-lg font-black text-white font-mono">Alliance 1 vs Alliance 2</h3>
                   </div>
@@ -697,9 +697,9 @@ export const PlayoffsView: React.FC = () => {
 
             {/* Bracket Bottom Status */}
             <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs font-mono text-zinc-400 shrink-0">
-              <span>Peachtree Championship • 8-Alliance Double Elimination</span>
+              <span>{activeEvent?.name || 'Tournament'} • 8-Alliance Double Elimination</span>
               <div className="flex items-center gap-3">
-                <span className="text-amber-400 font-bold">Team 1002 (Alliance 2 Finalists)</span>
+                <span className="text-amber-400 font-bold">Team {teamInfo.number} (Alliance 2 Finalists)</span>
                 <span className="text-emerald-400 font-bold">BRACKET COMPLETE</span>
               </div>
             </div>
@@ -823,7 +823,7 @@ export const PlayoffsView: React.FC = () => {
                 </span>
               </div>
               <span className="text-zinc-500 text-[11px] hidden sm:inline">
-                Peachtree District Championship
+                {activeEvent?.name || 'Tournament'}
               </span>
             </div>
 
@@ -836,13 +836,13 @@ export const PlayoffsView: React.FC = () => {
               }`}
             >
               {ALLIANCES_DATA.map((alliance) => {
-                const has1002 =
-                  alliance.captain === 1002 || alliance.pick1 === 1002 || alliance.pick2 === 1002;
+                const isOurTeam =
+                  alliance.captain === teamInfo.number || alliance.pick1 === teamInfo.number || alliance.pick2 === teamInfo.number;
                 return (
                   <div
                     key={alliance.number}
                     className={`p-2.5 rounded-xl border flex flex-col justify-between gap-2 transition-all ${
-                      has1002
+                      isOurTeam
                         ? 'bg-amber-950/40 border-amber-400/90 shadow-md ring-1 ring-amber-400/30'
                         : 'bg-black/40 border-zinc-800/90 hover:border-zinc-700'
                     }`}
@@ -853,9 +853,9 @@ export const PlayoffsView: React.FC = () => {
                         <span className="font-bold text-white text-xs truncate">
                           Alliance #{alliance.number}
                         </span>
-                        {has1002 && (
+                        {isOurTeam && (
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-400 text-black tracking-wide shrink-0">
-                            1002
+                            {teamInfo.number}
                           </span>
                         )}
                       </div>
@@ -878,9 +878,9 @@ export const PlayoffsView: React.FC = () => {
                         <span>Captain • Pick 1 • Pick 2:</span>
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
-                        <TeamBadge teamNumber={alliance.captain} highlight1002 />
-                        <TeamBadge teamNumber={alliance.pick1} highlight1002 />
-                        <TeamBadge teamNumber={alliance.pick2} highlight1002 />
+                        <TeamBadge teamNumber={alliance.captain} highlight1002={alliance.captain === teamInfo.number} />
+                        <TeamBadge teamNumber={alliance.pick1} highlight1002={alliance.pick1 === teamInfo.number} />
+                        <TeamBadge teamNumber={alliance.pick2} highlight1002={alliance.pick2 === teamInfo.number} />
                       </div>
                     </div>
 
@@ -897,7 +897,7 @@ export const PlayoffsView: React.FC = () => {
             {/* Bottom Footer */}
             <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-[11px] font-mono text-zinc-400 shrink-0">
               <span>8 Alliances • 24 Teams</span>
-              <span className="text-amber-400 font-bold">Alliance #2 (Captain 1002)</span>
+              <span className="text-amber-400 font-bold">Alliance #2 (Captain {teamInfo.number})</span>
             </div>
           </div>
         );
@@ -934,14 +934,14 @@ export const PlayoffsView: React.FC = () => {
               </span>
             </div>
             <div className="text-zinc-400 text-[11px] font-mono">
-              Peachtree District Championship • 8-Alliance Double Elimination
+              {activeEvent?.name || 'Tournament'} • 8-Alliance Double Elimination
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="px-3 py-1 rounded-lg bg-black/40 border border-zinc-800 text-xs text-zinc-300">
-            <span className="text-zinc-500 mr-1.5">Team 1002 Alliance:</span>
+            <span className="text-zinc-500 mr-1.5">Team {teamInfo.number} Alliance:</span>
             <span className="text-amber-400 font-bold">Alliance #2 (Captain)</span>
           </div>
         </div>
@@ -963,7 +963,7 @@ export const PlayoffsView: React.FC = () => {
         className="grid grid-cols-12 gap-2 sm:gap-3 items-stretch"
         style={{
           gridAutoFlow: 'dense',
-          gridAutoRows: 'minmax(185px, auto)',
+          gridAutoRows: 'minmax(62px, auto)',
         }}
       >
         {visibleSegments.map((seg) => (
