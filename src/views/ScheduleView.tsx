@@ -532,7 +532,7 @@ export const ScheduleView: React.FC = () => {
                 <Search size={13} className="absolute left-2.5 top-2 text-zinc-500" />
                 <input
                   type="text"
-                  placeholder="Search (e.g. Q12, P3, F1, 1002)..."
+                  placeholder={`Search (e.g. Q12, P3, F1, ${teamInfo.number})...`}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1 rounded-lg bg-black/50 border border-zinc-800 text-zinc-200 text-xs outline-hidden focus:border-zinc-600 font-mono"

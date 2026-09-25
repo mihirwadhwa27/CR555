@@ -29,8 +29,7 @@ export const TeamBadge: React.FC<TeamBadgeProps> = ({
   const [isHovered, setIsHovered] = useState(false);
   const activeTeam = usePitState(Selectors.teamInfo);
   const isCurrentActiveTeam = highlightActive && teamNumber === activeTeam.number;
-  const is1002 = highlight1002 && teamNumber === 1002;
-  const isHighlighted = isCurrentActiveTeam || is1002;
+  const isHighlighted = isCurrentActiveTeam;
   const teamMeta = useTeamMetadata(teamNumber);
   const teamName = isCurrentActiveTeam ? activeTeam.name : teamMeta.name;
 

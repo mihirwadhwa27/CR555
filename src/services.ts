@@ -5,7 +5,7 @@
  * Consolidates StorageService, ThemeService, and CacheManager.
  */
 
-import { ThemeConfig, ThemeTokens, DEFAULT_THEME_TOKENS, RankingModel, TeamEPAModel } from './types';
+import { ThemeConfig, ThemeTokens, DEFAULT_THEME_TOKENS, RankingModel, TeamEPAModel, NexusEventSummary } from './types';
 import { getTeamName, getTeamMetadata, registerTeamMetadata, registerTeamsBulk } from './utils/teamLookup';
 
 // ==========================================
@@ -2229,3 +2229,120 @@ export class DisplayBroadcastService {
     }
   }
 }
+
+// ==========================================
+// 8. FRC NEXUS SERVICE (Queuing & Pits)
+// ==========================================
+
+export class NexusService {
+  /**
+   * Pull event live summary from FRC Nexus (via our server proxy)
+   */
+  public static async pullEventSummary(
+    eventKey: string,
+    apiKey?: string
+  ): Promise<{
+    success: boolean;
+    data?: NexusEventSummary;
+    error?: string;
+    status: number;
+    source: 'NEXUS_LIVE' | 'NEXUS_DEMO' | 'OFFLINE';
+  }> {
+    const cleanKey = (eventKey || 'demo1234').toLowerCase().trim();
+    const endpoint = `/api/nexus/event/${encodeURIComponent(cleanKey)}${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
+
+    // Check Cache first (30s TTL for real-time queuing data)
+    const cached = CacheManager.get<NexusEventSummary>('nexus', cleanKey, 'event_summary');
+    if (cached && !cached.isExpired) {
+      return {
+        success: true,
+        data: cached.data,
+        status: 200,
+        source: 'NEXUS_LIVE',
+      };
+    }
+
+    try {
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (apiKey) {
+        headers['x-nexus-api-key'] = apiKey.trim();
+      }
+      const resp = await fetch(endpoint, { headers });
+      const json = await resp.json();
+
+      if (resp.ok && json.success) {
+        if (json.data) {
+          CacheManager.set('nexus', cleanKey, 'event_summary', json.data, 30);
+        }
+        return {
+          success: true,
+          data: json.data,
+          status: resp.status,
+          source: json.source || 'NEXUS_LIVE',
+        };
+      } else {
+        return {
+          success: false,
+          error: json.error || `HTTP ${resp.status}`,
+          status: resp.status,
+          source: 'OFFLINE',
+        };
+      }
+    } catch (err: any) {
+      if (cached && cached.data) {
+        return {
+          success: true,
+          data: cached.data,
+          status: 200,
+          source: 'NEXUS_DEMO',
+        };
+      }
+      return {
+        success: false,
+        error: err.message || 'Network error connecting to Nexus service',
+        status: 500,
+        source: 'OFFLINE',
+      };
+    }
+  }
+
+  /**
+   * Ping FRC Nexus API to test connectivity and authentication
+   */
+  public static async ping(apiKey?: string): Promise<{
+    success: boolean;
+    status: number;
+    latencyMs: number;
+    authenticated: boolean;
+    message: string;
+    detail?: string;
+  }> {
+    const endpoint = `/api/nexus/ping${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
+    const start = performance.now();
+    try {
+      const headers: Record<string, string> = { Accept: 'application/json' };
+      if (apiKey) {
+        headers['x-nexus-api-key'] = apiKey.trim();
+      }
+      const resp = await fetch(endpoint, { headers });
+      const json = await resp.json();
+      return {
+        success: Boolean(json.success),
+        status: json.status || resp.status,
+        latencyMs: json.latencyMs || Math.round(performance.now() - start),
+        authenticated: Boolean(json.authenticated),
+        message: json.message || `Nexus ping responded with HTTP ${resp.status}`,
+        detail: json.detail,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        status: 502,
+        latencyMs: Math.round(performance.now() - start),
+        authenticated: false,
+        message: `Failed to ping Nexus: ${err.message}`,
+      };
+    }
+  }
+}
+

@@ -118,8 +118,8 @@ export const DashboardView: React.FC = () => {
   // Pulse Queue Call state (with automatic countdown logic and manual simulator presets)
   const [pulseMode, setPulseMode] = useState<'AUTO' | 'QUEUE_5MIN' | 'ON_DECK' | 'NOW_QUEUING' | 'NO_MATCHES'>('AUTO');
 
-  // Upcoming matches view filter: Team 1002 schedule vs All Field schedule
-  const [upcomingFilter, setUpcomingFilter] = useState<'1002_ONLY' | 'ALL_FIELD'>('1002_ONLY');
+  // Upcoming matches view filter: Active team schedule vs All Field schedule
+  const [upcomingFilter, setUpcomingFilter] = useState<'TEAM_ONLY' | 'ALL_FIELD'>('TEAM_ONLY');
 
   // Auto countdown
   const [secondsUntilNextMatch, setSecondsUntilNextMatch] = useState(1080);
@@ -700,16 +700,16 @@ export const DashboardView: React.FC = () => {
                   Upcoming Matches Schedule
                 </span>
                 <span className="text-[10px] font-semibold text-zinc-400 bg-zinc-800/80 px-2 py-0.5 rounded-full">
-                  {upcomingFilter === '1002_ONLY' ? `${displayUpcoming.length} Matches Today` : 'Field Queue'}
+                  {upcomingFilter === 'TEAM_ONLY' ? `${displayUpcoming.length} Matches Today` : 'Field Queue'}
                 </span>
               </div>
 
               {/* View Switcher Toggle */}
               <div className="flex items-center bg-black/50 p-0.5 rounded-lg border border-zinc-800 shrink-0">
                 <button
-                  onClick={() => setUpcomingFilter('1002_ONLY')}
+                  onClick={() => setUpcomingFilter('TEAM_ONLY')}
                   className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
-                    upcomingFilter === '1002_ONLY'
+                    upcomingFilter === 'TEAM_ONLY'
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'text-zinc-400 hover:text-zinc-200'
                   }`}
@@ -731,7 +731,7 @@ export const DashboardView: React.FC = () => {
 
             {/* Match List: Focused on Team Schedule or Field Queue */}
             <div className="flex-1 overflow-y-auto pr-1 space-y-2 my-2 no-scrollbar">
-              {upcomingFilter === '1002_ONLY' ? (
+              {upcomingFilter === 'TEAM_ONLY' ? (
                 // Sequence of matches for Team
                 displayUpcoming.map((m, idx) => {
                   const isRed = m.redAlliance.teams.includes(teamInfo.number);
@@ -1395,7 +1395,7 @@ export const DashboardView: React.FC = () => {
               Pulse Simulation Active:
             </span>
             <span className="text-zinc-200 font-medium">
-              Team 1002 CircuitRunners • Day 2 of PCH DCMP 2026 @ 11:30 AM
+              Team {teamInfo.number} {teamInfo.name} • {demoMode?.dayLabel || 'Day 2'} @ {demoMode?.timeString || '11:30 AM'}
             </span>
             <span className="text-zinc-500 hidden sm:inline">•</span>
             <span className="text-amber-300 font-mono font-bold hidden sm:inline">

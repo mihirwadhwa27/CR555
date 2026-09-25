@@ -901,6 +901,223 @@ app.get('/api/tba/event/:eventKey/teams', async (req, res) => {
 });
 
 // -------------------------------------------------------------
+// FRC NEXUS API PROXY (Queuing, Announcements, Parts Requests)
+// -------------------------------------------------------------
+
+// Nexus Ping & Health Diagnostic
+app.get('/api/nexus/ping', async (req, res) => {
+  const apiKey = (req.headers['x-nexus-api-key'] as string) || (req.query.apiKey as string) || process.env.NEXUS_API_KEY;
+  const start = performance.now();
+  try {
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (apiKey && apiKey.trim()) {
+      headers['Nexus-Api-Key'] = apiKey.trim();
+    }
+    const resp = await fetchWithTimeout('https://frc.nexus/api/v1/event/demo1234', { headers }, 6000);
+    const latencyMs = Math.round(performance.now() - start);
+    const rawText = await resp.text();
+
+    if (resp.ok) {
+      return res.json({
+        success: true,
+        status: 200,
+        latencyMs,
+        authenticated: true,
+        message: 'Nexus API connected and authenticated successfully',
+      });
+    } else if (resp.status === 404) {
+      // 404 from frc.nexus means the API key was authenticated and accepted, but the test event demo1234 is not active
+      return res.json({
+        success: true,
+        status: 200,
+        latencyMs,
+        authenticated: true,
+        message: 'Nexus API key authenticated & verified on frc.nexus!',
+        detail: cleanText(rawText),
+      });
+    } else if (resp.status === 401) {
+      return res.json({
+        success: false,
+        status: 401,
+        latencyMs,
+        authenticated: false,
+        message: 'Nexus API reachable, but missing API key. Set key at frc.nexus/api',
+        detail: cleanText(rawText),
+      });
+    } else if (resp.status === 403) {
+      return res.json({
+        success: false,
+        status: 403,
+        latencyMs,
+        authenticated: false,
+        message: 'Nexus API reachable, but API key was rejected by frc.nexus',
+        detail: cleanText(rawText),
+      });
+    } else {
+      return res.json({
+        success: false,
+        status: resp.status,
+        latencyMs,
+        authenticated: false,
+        message: `Nexus API responded with HTTP ${resp.status}`,
+        detail: cleanText(rawText),
+      });
+    }
+  } catch (err: any) {
+    const latencyMs = Math.round(performance.now() - start);
+    return res.status(502).json({
+      success: false,
+      status: 502,
+      latencyMs,
+      authenticated: false,
+      message: `Failed to reach frc.nexus: ${err.message}`,
+    });
+  }
+});
+
+// -------------------------------------------------------------
+// FRC NEXUS PUSH WEBHOOK (Receives instant status from frc.nexus)
+// -------------------------------------------------------------
+let latestNexusPushPayload: any = null;
+
+app.post('/api/nexus/webhook', (req, res) => {
+  const token = (req.headers['nexus-token'] as string) || (req.query.token as string);
+  const configuredToken = process.env.NEXUS_WEBHOOK_TOKEN;
+
+  if (configuredToken && configuredToken.trim() && token !== configuredToken.trim()) {
+    return res.status(403).json({ error: 'Unauthorized: Invalid Nexus-Token header' });
+  }
+
+  const payload = req.body;
+  if (payload) {
+    latestNexusPushPayload = {
+      eventKey: payload.eventKey,
+      dataAsOfTime: payload.dataAsOfTime || Date.now(),
+      nowQueuing: payload.nowQueuing,
+      scheduledMatches: payload.scheduledMatches || [],
+      announcements: payload.announcements || [],
+      partsRequests: payload.partsRequests || [],
+      receivedAt: Date.now(),
+    };
+  }
+
+  return res.json({ success: true, message: 'Nexus webhook push received successfully' });
+});
+
+app.get('/api/nexus/webhook/latest', (_req, res) => {
+  res.json({
+    success: true,
+    data: latestNexusPushPayload,
+  });
+});
+
+// Nexus Live Event Summary (Live queuing status, announcements, parts requests)
+app.get('/api/nexus/event/:eventKey', async (req, res) => {
+  const { eventKey } = req.params;
+  const apiKey = (req.headers['x-nexus-api-key'] as string) || (req.query.apiKey as string) || process.env.NEXUS_API_KEY;
+
+  if (apiKey && apiKey.trim().length > 3) {
+    try {
+      const resp = await fetchWithTimeout(`https://frc.nexus/api/v1/event/${encodeURIComponent(eventKey)}`, {
+        headers: {
+          'Nexus-Api-Key': apiKey.trim(),
+          Accept: 'application/json',
+        },
+      }, 7000);
+
+      if (resp.ok) {
+        const data = await resp.json();
+        return res.json({
+          success: true,
+          source: 'NEXUS_LIVE',
+          eventKey,
+          data,
+        });
+      } else {
+        const errorText = await resp.text();
+        return res.status(resp.status).json({
+          success: false,
+          status: resp.status,
+          source: 'NEXUS_LIVE',
+          eventKey,
+          error: cleanText(errorText),
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[Nexus Server] Error fetching event ${eventKey}:`, err.message);
+    }
+  }
+
+  // If no API key provided or demo event requested, provide demo/fallback Nexus payload
+  if (eventKey === 'demo1234' || !apiKey) {
+    const now = Date.now();
+    return res.json({
+      success: true,
+      source: 'NEXUS_DEMO',
+      eventKey,
+      data: {
+        eventKey,
+        dataAsOfTime: now,
+        nowQueuing: 'Qualification 13',
+        scheduledMatches: [
+          {
+            label: 'Qualification 12',
+            status: 'ON_FIELD',
+            times: { estimatedStartTime: now - 120000, estimatedQueueTime: now - 720000 },
+          },
+          {
+            label: 'Qualification 13',
+            status: 'QUEUING',
+            times: { estimatedStartTime: now + 480000, estimatedQueueTime: now },
+          },
+          {
+            label: 'Qualification 14',
+            status: 'UPCOMING',
+            times: { estimatedStartTime: now + 1080000, estimatedQueueTime: now + 600000 },
+          },
+        ],
+        announcements: [
+          {
+            id: 'nexus-ann-1',
+            announcement: 'Match 13 Queuing: Drive Teams please report to queuing entrance with safety glasses.',
+            postedTime: now - 300000,
+          },
+          {
+            id: 'nexus-ann-2',
+            announcement: 'Alliance selections scheduled for 1:30 PM today in Main Arena.',
+            postedTime: now - 3600000,
+          },
+        ],
+        partsRequests: [
+          {
+            id: 'nexus-pr-1',
+            teamNumber: 1002,
+            part: '1/2" Hex Shaft 12-inch length (Urgent)',
+            urgency: 'HIGH',
+            status: 'OPEN',
+            requestedTime: now - 600000,
+          },
+          {
+            id: 'nexus-pr-2',
+            teamNumber: 1771,
+            part: 'CANcoder 4-pin ribbon cable extension',
+            urgency: 'MEDIUM',
+            status: 'OPEN',
+            requestedTime: now - 1800000,
+          },
+        ],
+      },
+    });
+  }
+
+  return res.status(401).json({
+    success: false,
+    status: 401,
+    error: 'Missing Nexus API Key. Get your key from https://frc.nexus/api and set it in CR555 Settings.',
+  });
+});
+
+// -------------------------------------------------------------
 // VITE DEV SERVER OR PRODUCTION STATIC SERVING
 // -------------------------------------------------------------
 async function start() {

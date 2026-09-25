@@ -585,23 +585,37 @@ export const ControllerView: React.FC = () => {
                 <Clock size={14} className="text-amber-400" />
                 FRC Nexus (Queuing)
               </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 font-bold">
-                {telemetry.nexus.status}
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                telemetry.nexus.status === 'LIVE'
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : telemetry.nexus.status === 'RECENT'
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                  : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+              }`}>
+                {telemetry.nexus.status} {telemetry.nexus.httpStatus ? `(${telemetry.nexus.httpStatus})` : ''}
               </span>
             </div>
             <div className="text-[11px] text-zinc-400 font-mono truncate">
               https://frc.nexus/api/v1/event
             </div>
             <div className="flex items-center justify-between text-xs pt-1">
-              <span className="text-zinc-500">Polling Interval:</span>
-              <span className="font-mono text-zinc-300 font-bold">15s Active</span>
+              <span className="text-zinc-500">Live Status:</span>
+              <span className="font-mono text-zinc-300 font-bold">
+                {telemetry.nexus.errorMessage ? 'Key Required / Error' : 'Ready'}
+              </span>
             </div>
-            <div className="pt-2">
+            <div className="pt-2 flex gap-2">
               <button
                 onClick={() => Actions.pingService('nexus')}
-                className="w-full py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-zinc-200 transition-colors"
+                className="flex-1 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-zinc-200 transition-colors cursor-pointer"
               >
-                Ping Nexus Service
+                Ping Nexus
+              </button>
+              <button
+                onClick={() => Actions.syncNexusData()}
+                className="flex-1 py-1.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[11px] font-bold text-emerald-300 transition-colors cursor-pointer"
+              >
+                Sync Queue
               </button>
             </div>
           </div>

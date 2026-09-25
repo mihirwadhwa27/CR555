@@ -27,9 +27,13 @@ import { usePitState, Actions, Selectors } from '../store';
 import { TbaService } from '../services';
 import { CrLogo } from './CrLogo';
 
-// Only Team 1002 is a preset per user instructions
+// Quick selection presets for configured team themes (or type any team number below)
 const TEAM_PRESETS = [
   { number: 1002, name: 'CircuitRunners Robotics', location: 'Marietta, GA', isHost: true },
+  { number: 1833, name: 'Team BEAN', location: 'Cumming, GA', isHost: false },
+  { number: 1771, name: 'North Gwinnett Robotics', location: 'Suwanee, GA', isHost: false },
+  { number: 2974, name: 'Walton Robotics', location: 'Marietta, GA', isHost: false },
+  { number: 8736, name: 'The Mechanisms', location: 'Marietta, GA', isHost: false },
 ];
 
 export const PulseSetupModal: React.FC = () => {

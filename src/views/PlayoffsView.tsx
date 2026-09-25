@@ -357,7 +357,7 @@ export const PlayoffsView: React.FC = () => {
             </span>
             {has1002 && (
               <span className="px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-400 text-black shrink-0 tracking-wide">
-                1002
+                {teamInfo.number}
               </span>
             )}
           </div>

@@ -375,6 +375,46 @@ export interface TelemetryLogEntry {
   latencyMs?: number;
 }
 
+export interface NexusMatchTime {
+  estimatedStartTime?: number;
+  estimatedQueueTime?: number;
+  actualStartTime?: number;
+}
+
+export interface NexusScheduledMatch {
+  label: string;
+  status?: string;
+  times?: NexusMatchTime;
+  redTeams?: number[];
+  blueTeams?: number[];
+}
+
+export interface NexusAnnouncement {
+  id?: string;
+  announcement?: string;
+  message?: string;
+  postedTime?: number;
+}
+
+export interface NexusPartsRequest {
+  id?: string;
+  teamNumber?: number;
+  part?: string;
+  partName?: string;
+  status?: string;
+  urgency?: 'HIGH' | 'MEDIUM' | 'LOW';
+  requestedTime?: number;
+}
+
+export interface NexusEventSummary {
+  eventKey: string;
+  dataAsOfTime: number;
+  nowQueuing: string | null;
+  scheduledMatches?: NexusScheduledMatch[];
+  announcements?: NexusAnnouncement[];
+  partsRequests?: NexusPartsRequest[];
+}
+
 export interface ApplicationState {
   config: {
     teamNumber: number;
@@ -386,6 +426,7 @@ export interface ApplicationState {
     tenFootMode: boolean;
     tbaApiKey: string;
     nexusApiKey: string;
+    nexusWebhookToken?: string;
     corsProxyUrl: string;
     nexusManualEventKey: string;
     theme: ThemeConfig;

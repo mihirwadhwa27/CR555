@@ -16,7 +16,7 @@ import {
   ServiceStatus,
   DEFAULT_THEME_TOKENS,
 } from './types';
-import { STORAGE_KEYS, StorageService, ThemeService, CacheManager, SAMPLE_1002_MATCHES, SAMPLE_1002_RANKINGS, SAMPLE_EPA_DATA, TbaService, StatboticsService, DisplayBroadcastService } from './services';
+import { STORAGE_KEYS, StorageService, ThemeService, CacheManager, SAMPLE_1002_MATCHES, SAMPLE_1002_RANKINGS, SAMPLE_EPA_DATA, TbaService, StatboticsService, DisplayBroadcastService, NexusService } from './services';
 import { MatchModel, VideoReplayState, TelemetryLogEntry, ToolRecordModel } from './types';
 import { getTeamMetadata } from './utils/teamLookup';
 
@@ -46,7 +46,8 @@ export function createInitialState(): ApplicationState {
     ],
     tenFootMode: false,
     tbaApiKey: 'Team1002-PitFUSION-PublicPreviewKey-2026',
-    nexusApiKey: '',
+    nexusApiKey: 'iOk-xjD_qisD2C0T59YuTa1_F3E',
+    nexusWebhookToken: '',
     corsProxyUrl: '',
     nexusManualEventKey: '',
     theme: defaultTheme,
@@ -512,6 +513,9 @@ export const Selectors = {
   toolLoans: (s: ApplicationState) => s.userOperations.toolLoans || [],
   playoffs: (s: ApplicationState) => s.activeEvent.playoffs,
   customLogoUrl: (s: ApplicationState) => s.config.customLogoUrl || '',
+  nexusApiKey: (s: ApplicationState) => s.config.nexusApiKey || '',
+  nexusWebhookToken: (s: ApplicationState) => s.config.nexusWebhookToken || '',
+  nexusManualEventKey: (s: ApplicationState) => s.config.nexusManualEventKey || '',
 };
 
 // ==========================================
@@ -524,6 +528,30 @@ export const Actions = {
     if (typeof window !== 'undefined' && window.location.hash !== `#${tab}`) {
       window.location.hash = `#${tab}`;
     }
+  },
+
+  setNexusApiKey(key: string) {
+    pitStore.setState((s) => {
+      const nextConfig = { ...s.config, nexusApiKey: key.trim() };
+      StorageService.set(STORAGE_KEYS.CONFIG, nextConfig);
+      return { ...s, config: nextConfig };
+    });
+  },
+
+  setNexusWebhookToken(token: string) {
+    pitStore.setState((s) => {
+      const nextConfig = { ...s.config, nexusWebhookToken: token.trim() };
+      StorageService.set(STORAGE_KEYS.CONFIG, nextConfig);
+      return { ...s, config: nextConfig };
+    });
+  },
+
+  setNexusManualEventKey(eventKey: string) {
+    pitStore.setState((s) => {
+      const nextConfig = { ...s.config, nexusManualEventKey: eventKey.trim() };
+      StorageService.set(STORAGE_KEYS.CONFIG, nextConfig);
+      return { ...s, config: nextConfig };
+    });
   },
 
   setCustomLogoUrl(url: string) {
@@ -1222,6 +1250,101 @@ export const Actions = {
 
   async pingService(service: 'tba' | 'nexus' | 'statbotics') {
     const start = performance.now();
+    const state = pitStore.getState();
+
+    if (service === 'nexus') {
+      const res = await NexusService.ping(state.config.nexusApiKey);
+      const isLive = res.success && res.status === 200;
+      pitStore.setState((s) => ({
+        ...s,
+        telemetry: {
+          ...s.telemetry,
+          nexus: {
+            ...s.telemetry.nexus,
+            status: isLive ? 'LIVE' : res.status === 401 ? 'RECENT' : 'ERROR',
+            lastAttemptTimestamp: Date.now(),
+            lastSuccessTimestamp: isLive ? Date.now() : s.telemetry.nexus.lastSuccessTimestamp,
+            httpStatus: res.status,
+            errorMessage: isLive ? null : res.message,
+          },
+        },
+        telemetryLogs: [
+          {
+            id: `log-${Date.now()}`,
+            timestamp: Date.now(),
+            service: 'NEXUS',
+            status: isLive ? 'SUCCESS' : res.status === 401 ? 'WARNING' : 'ERROR',
+            message: `Nexus Ping: HTTP ${res.status} - ${res.message} (${res.latencyMs}ms)`,
+            latencyMs: res.latencyMs,
+          },
+          ...s.telemetryLogs.slice(0, 49),
+        ],
+      }));
+      return res;
+    }
+
+    if (service === 'tba') {
+      const eventKey = state.activeEvent.metadata?.key || state.config.selectedEventKey || '2026gacmp';
+      const apiKey = state.config.tbaApiKey;
+      try {
+        const ev = await TbaService.pullEventInfoFromTba(eventKey, apiKey);
+        const latency = Math.round(performance.now() - start);
+        pitStore.setState((s) => ({
+          ...s,
+          telemetry: {
+            ...s.telemetry,
+            tba: {
+              ...s.telemetry.tba,
+              status: 'LIVE',
+              lastAttemptTimestamp: Date.now(),
+              lastSuccessTimestamp: Date.now(),
+              httpStatus: 200,
+            },
+          },
+          telemetryLogs: [
+            {
+              id: `log-${Date.now()}`,
+              timestamp: Date.now(),
+              service: 'TBA',
+              status: 'SUCCESS',
+              message: `TBA Ping: 200 OK (${ev?.name || eventKey}) - ${latency}ms`,
+              latencyMs: latency,
+            },
+            ...s.telemetryLogs.slice(0, 49),
+          ],
+        }));
+        return { success: true, latencyMs: latency };
+      } catch (err: any) {
+        const latency = Math.round(performance.now() - start);
+        pitStore.setState((s) => ({
+          ...s,
+          telemetry: {
+            ...s.telemetry,
+            tba: {
+              ...s.telemetry.tba,
+              status: 'ERROR',
+              lastAttemptTimestamp: Date.now(),
+              httpStatus: 500,
+              errorMessage: err.message,
+            },
+          },
+          telemetryLogs: [
+            {
+              id: `log-${Date.now()}`,
+              timestamp: Date.now(),
+              service: 'TBA',
+              status: 'ERROR',
+              message: `TBA Ping Error: ${err.message}`,
+              latencyMs: latency,
+            },
+            ...s.telemetryLogs.slice(0, 49),
+          ],
+        }));
+        return { success: false, latencyMs: latency };
+      }
+    }
+
+    // Statbotics ping
     await new Promise((r) => setTimeout(r, Math.floor(45 + Math.random() * 75)));
     const latency = Math.round(performance.now() - start);
 
@@ -1249,6 +1372,155 @@ export const Actions = {
         ...s.telemetryLogs.slice(0, 49),
       ],
     }));
+  },
+
+  async syncNexusData(customEventKey?: string) {
+    const state = pitStore.getState();
+    const eventKey = customEventKey || state.config.nexusManualEventKey || state.activeEvent.metadata?.key || state.config.selectedEventKey || 'demo1234';
+    const apiKey = state.config.nexusApiKey;
+
+    pitStore.setState((s) => ({
+      ...s,
+      telemetry: {
+        ...s.telemetry,
+        nexus: {
+          ...s.telemetry.nexus,
+          status: 'RECENT',
+          lastAttemptTimestamp: Date.now(),
+        },
+      },
+    }));
+
+    try {
+      const res = await NexusService.pullEventSummary(eventKey, apiKey);
+      if (res.success && res.data) {
+        const summary = res.data;
+        pitStore.setState((s) => {
+          // Merge announcements from Nexus
+          const incomingAnnouncements = (summary.announcements || []).map((a, i) => ({
+            id: a.id || `nexus-ann-${a.postedTime || Date.now()}-${i}`,
+            message: a.announcement || a.message || '',
+            postedAt: a.postedTime || Date.now(),
+          })).filter((a) => a.message.trim().length > 0);
+
+          const existingIds = new Set(s.activeEvent.announcements.map((a) => a.id));
+          const mergedAnnouncements = [
+            ...incomingAnnouncements.filter((a) => !existingIds.has(a.id)),
+            ...s.activeEvent.announcements,
+          ];
+
+          // Merge parts requests from Nexus
+          const incomingParts = (summary.partsRequests || []).map((p, i) => ({
+            id: p.id || `nexus-pr-${p.requestedTime || Date.now()}-${i}`,
+            teamNumber: p.teamNumber || s.config.teamNumber,
+            partName: p.part || p.partName || 'Component',
+            urgency: p.urgency || 'MEDIUM',
+            status: (p.status === 'FULFILLED' ? 'FULFILLED' : 'OPEN') as 'OPEN' | 'FULFILLED',
+            requestedAt: p.requestedTime || Date.now(),
+          }));
+
+          const existingPrIds = new Set(s.activeEvent.partsRequests.map((p) => p.id));
+          const mergedParts = [
+            ...incomingParts.filter((p) => !existingPrIds.has(p.id)),
+            ...s.activeEvent.partsRequests,
+          ];
+
+          const statusText = summary.nowQueuing
+            ? `Now Queuing: ${summary.nowQueuing} (via FRC Nexus)`
+            : s.activeEvent.queue?.statusText || 'Arena Queuing Active';
+
+          let parsedMatchNum: number | null = null;
+          if (summary.nowQueuing) {
+            const numMatch = summary.nowQueuing.match(/\d+/);
+            if (numMatch) parsedMatchNum = parseInt(numMatch[0], 10);
+          }
+
+          const existingQueue = s.activeEvent.queue;
+          const updatedQueue = {
+            currentMatchNumber: parsedMatchNum ? Math.max(1, parsedMatchNum - 1) : (existingQueue?.currentMatchNumber ?? 12),
+            currentCompLevel: (summary.nowQueuing?.toLowerCase().includes('playoff') ? 'PLAYOFF' : 'QUAL') as 'QUAL' | 'PLAYOFF' | 'FINALS',
+            nowQueuingMatchNumber: parsedMatchNum || (existingQueue?.nowQueuingMatchNumber ?? 13),
+            statusText,
+            updatedAt: Date.now(),
+            isEstimated: false,
+          };
+
+          return {
+            ...s,
+            activeEvent: {
+              ...s.activeEvent,
+              announcements: mergedAnnouncements,
+              partsRequests: mergedParts,
+              queue: updatedQueue,
+            },
+            telemetry: {
+              ...s.telemetry,
+              nexus: {
+                status: 'LIVE',
+                lastAttemptTimestamp: Date.now(),
+                lastSuccessTimestamp: Date.now(),
+                httpStatus: res.status || 200,
+                errorMessage: null,
+                consecutiveFailures: 0,
+              },
+            },
+            telemetryLogs: [
+              {
+                id: `log-${Date.now()}`,
+                timestamp: Date.now(),
+                service: 'NEXUS',
+                status: 'SUCCESS',
+                message: `Nexus Event Sync OK: Queuing "${summary.nowQueuing || 'Standby'}" (${res.source})`,
+              },
+              ...s.telemetryLogs.slice(0, 49),
+            ],
+          };
+        });
+        return { success: true, data: res.data };
+      } else {
+        pitStore.setState((s) => ({
+          ...s,
+          telemetry: {
+            ...s.telemetry,
+            nexus: {
+              status: res.status === 401 ? 'STALE' : 'ERROR',
+              lastAttemptTimestamp: Date.now(),
+              lastSuccessTimestamp: s.telemetry.nexus.lastSuccessTimestamp,
+              consecutiveFailures: s.telemetry.nexus.consecutiveFailures + 1,
+              httpStatus: res.status,
+              errorMessage: res.error || 'Failed to sync event summary',
+            },
+          },
+          telemetryLogs: [
+            {
+              id: `log-${Date.now()}`,
+              timestamp: Date.now(),
+              service: 'NEXUS',
+              status: res.status === 401 ? 'WARNING' : 'ERROR',
+              message: `Nexus Sync: HTTP ${res.status} - ${res.error || 'Check API key or event key'}`,
+            },
+            ...s.telemetryLogs.slice(0, 49),
+          ],
+        }));
+        return { success: false, error: res.error };
+      }
+    } catch (err: any) {
+      pitStore.setState((s) => ({
+        ...s,
+        telemetry: {
+          ...s.telemetry,
+          nexus: {
+            status: 'ERROR',
+            lastAttemptTimestamp: Date.now(),
+            lastSuccessTimestamp: s.telemetry.nexus.lastSuccessTimestamp,
+            consecutiveFailures: s.telemetry.nexus.consecutiveFailures + 1,
+            httpStatus: 500,
+            errorMessage: err.message,
+          },
+        },
+      }));
+      return { success: false, error: err.message };
+    }
   },
 
   clearTelemetryLogs() {

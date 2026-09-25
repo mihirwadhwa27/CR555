@@ -15,9 +15,13 @@ import {
   Trash2,
   Layers,
   MapPin,
+  Radio,
+  ExternalLink,
+  Activity,
+  AlertCircle,
 } from 'lucide-react';
 import { usePitState, pitStore, Selectors, Actions } from '../store';
-import { StorageService } from '../services';
+import { StorageService, STORAGE_KEYS } from '../services';
 import { CrLogo } from '../components/CrLogo';
 
 export const SettingsView: React.FC = () => {
@@ -25,22 +29,60 @@ export const SettingsView: React.FC = () => {
   const teamInfo = usePitState(Selectors.teamInfo);
   const activeEvent = usePitState(Selectors.activeEvent);
   const config = usePitState((s) => s.config);
+  const telemetry = usePitState((s) => s.telemetry);
   const customLogoUrl = usePitState(Selectors.customLogoUrl);
   const demoMode = usePitState(Selectors.demoMode);
 
   const [clearedNotice, setClearedNotice] = useState(false);
   const [logoInputUrl, setLogoInputUrl] = useState(customLogoUrl || '');
   const [logoSuccessNotice, setLogoSuccessNotice] = useState(false);
+  const [isPingingNexus, setIsPingingNexus] = useState(false);
+  const [nexusPingResult, setNexusPingResult] = useState<any>(null);
+  const [isSyncingNexus, setIsSyncingNexus] = useState(false);
+  const [nexusSyncResult, setNexusSyncResult] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpdateApiKey = (key: string) => {
-    pitStore.setState((s) => ({
-      ...s,
-      config: {
-        ...s.config,
-        tbaApiKey: key,
-      },
-    }));
+    pitStore.setState((s) => {
+      const next = { ...s.config, tbaApiKey: key.trim() };
+      StorageService.set(STORAGE_KEYS.CONFIG, next);
+      return { ...s, config: next };
+    });
+  };
+
+  const handleUpdateNexusApiKey = (key: string) => {
+    Actions.setNexusApiKey(key);
+  };
+
+  const handleUpdateNexusEventKey = (evKey: string) => {
+    Actions.setNexusManualEventKey(evKey);
+  };
+
+  const handleTestNexus = async () => {
+    setIsPingingNexus(true);
+    setNexusPingResult(null);
+    try {
+      const res = await Actions.pingService('nexus');
+      setNexusPingResult(res);
+    } finally {
+      setIsPingingNexus(false);
+    }
+  };
+
+  const handleSyncNexusNow = async () => {
+    setIsSyncingNexus(true);
+    setNexusSyncResult(null);
+    try {
+      const res = await Actions.syncNexusData();
+      if (res.success) {
+        setNexusSyncResult(`Synced successfully! Now Queuing: ${res.data?.nowQueuing || 'Standby'}`);
+      } else {
+        setNexusSyncResult(`Sync failed: ${res.error || 'Check key and event'}`);
+      }
+    } finally {
+      setIsSyncingNexus(false);
+      setTimeout(() => setNexusSyncResult(null), 5000);
+    }
   };
 
   const handleClearCache = () => {
@@ -298,14 +340,19 @@ export const SettingsView: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* API Keys Configuration */}
+        {/* The Blue Alliance (TBA) Configuration */}
         <div className="p-4 rounded-xl bg-black/40 border border-zinc-800 space-y-3">
-          <div className="flex items-center gap-2 text-zinc-200 font-semibold text-sm">
-            <Key size={16} style={{ color: theme.tokens.foreground }} />
-            The Blue Alliance (TBA) API Key
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-zinc-200 font-semibold text-sm">
+              <Key size={16} style={{ color: theme.tokens.foreground }} />
+              The Blue Alliance (TBA) API Key
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">
+              Status: {telemetry.tba.status}
+            </span>
           </div>
           <p className="text-xs text-zinc-400">
-            Shipped with default Team 1002 read-only key. You can input an operator override below.
+            Shipped with default Team {teamInfo.number} key. You can input an operator override below.
           </p>
 
           <input
@@ -313,9 +360,138 @@ export const SettingsView: React.FC = () => {
             type="password"
             value={config.tbaApiKey}
             onChange={(e) => handleUpdateApiKey(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border text-xs font-mono bg-zinc-900 border-zinc-700 text-zinc-200 outline-hidden"
+            className="w-full px-3 py-2 rounded-lg border text-xs font-mono bg-zinc-900 border-zinc-700 text-zinc-200 outline-hidden focus:border-amber-400"
             placeholder="TBA v3 API Key"
           />
+        </div>
+
+        {/* FRC Nexus (Queuing, Announcements & Parts Requests) */}
+        <div className="p-4 rounded-xl bg-black/40 border border-zinc-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-zinc-200 font-semibold text-sm">
+              <Radio size={16} className="text-emerald-400" />
+              FRC Nexus (Live Queuing & Pits)
+            </div>
+            <a
+              href="https://frc.nexus/api"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[11px] text-amber-400 hover:text-amber-300 flex items-center gap-1 font-mono"
+            >
+              <span>frc.nexus/api</span>
+              <ExternalLink size={12} />
+            </a>
+          </div>
+          <p className="text-xs text-zinc-400">
+            Enables real-time match queuing status, official event announcements, and parts requests from FRC Nexus.
+          </p>
+
+          <div className="space-y-2">
+            <div>
+              <label className="text-[11px] font-mono text-zinc-400 block mb-1">Nexus-Api-Key (Pull):</label>
+              <input
+                id="nexus-api-key-input"
+                type="password"
+                value={config.nexusApiKey || ''}
+                onChange={(e) => handleUpdateNexusApiKey(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border text-xs font-mono bg-zinc-900 border-zinc-700 text-zinc-200 outline-hidden focus:border-amber-400"
+                placeholder="Enter Nexus-Api-Key (from frc.nexus/api)"
+              />
+            </div>
+
+            {/* Nexus Push Webhook Config */}
+            <div className="pt-1 pb-1 border-t border-b border-zinc-800/80 my-2 space-y-2">
+              <div className="text-[11px] font-bold text-amber-400 font-mono flex items-center justify-between">
+                <span>Nexus Push (Webhook Receiver):</span>
+                <span className="text-[10px] text-zinc-500 font-normal">Instant field updates</span>
+              </div>
+              <div>
+                <label className="text-[10px] font-mono text-zinc-400 block mb-0.5">Your Webhook URL (Paste into frc.nexus/api):</label>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/nexus/webhook`}
+                    className="w-full px-2.5 py-1.5 rounded-lg border text-[11px] font-mono bg-black/60 border-zinc-700 text-amber-300 select-all"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-[10px] font-mono text-zinc-400 block mb-0.5">Nexus-Token (Push Verification Secret from frc.nexus):</label>
+                <input
+                  id="nexus-webhook-token-input"
+                  type="password"
+                  value={config.nexusWebhookToken || ''}
+                  onChange={(e) => Actions.setNexusWebhookToken(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg border text-[11px] font-mono bg-zinc-900 border-zinc-700 text-zinc-200 outline-hidden focus:border-amber-400"
+                  placeholder="Paste Nexus-Token from frc.nexus/api webhooks"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-mono text-zinc-400 block mb-1">
+                Nexus Event Key (Defaults to {activeEvent?.key || config.selectedEventKey || 'demo1234'}):
+              </label>
+              <input
+                id="nexus-event-key-input"
+                type="text"
+                value={config.nexusManualEventKey || ''}
+                onChange={(e) => handleUpdateNexusEventKey(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border text-xs font-mono bg-zinc-900 border-zinc-700 text-zinc-200 outline-hidden focus:border-amber-400"
+                placeholder="e.g. 2024casf or demo1234"
+              />
+            </div>
+
+            <div className="pt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleTestNexus}
+                disabled={isPingingNexus}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors cursor-pointer"
+              >
+                <Activity size={13} className={isPingingNexus ? 'animate-spin text-amber-400' : 'text-emerald-400'} />
+                <span>{isPingingNexus ? 'Testing Ping...' : 'Test Connection'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSyncNexusNow}
+                disabled={isSyncingNexus}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 transition-colors cursor-pointer"
+              >
+                <Radio size={13} className={isSyncingNexus ? 'animate-pulse' : ''} />
+                <span>{isSyncingNexus ? 'Syncing...' : 'Sync Queuing Now'}</span>
+              </button>
+            </div>
+
+            {/* Test or Sync Feedback */}
+            {nexusPingResult && (
+              <div
+                className={`p-2.5 rounded-lg text-xs font-mono flex items-start gap-2 border ${
+                  nexusPingResult.status === 200
+                    ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                    : nexusPingResult.status === 401
+                    ? 'bg-amber-950/40 border-amber-500/40 text-amber-300'
+                    : 'bg-red-950/40 border-red-500/40 text-red-300'
+                }`}
+              >
+                <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold">
+                    HTTP {nexusPingResult.status} ({nexusPingResult.latencyMs}ms)
+                  </div>
+                  <div className="text-[11px] opacity-90">{nexusPingResult.message}</div>
+                </div>
+              </div>
+            )}
+
+            {nexusSyncResult && (
+              <div className="p-2 rounded-lg bg-zinc-900 border border-zinc-700 text-xs font-mono text-zinc-200">
+                {nexusSyncResult}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Storage & Diagnostics */}
@@ -331,7 +507,7 @@ export const SettingsView: React.FC = () => {
           <div className="flex items-center gap-3 pt-2">
             <button
               onClick={handleClearCache}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white transition-colors"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer"
             >
               {clearedNotice ? <Check size={13} className="text-emerald-400" /> : <RotateCcw size={13} />}
               {clearedNotice ? 'Cache Cleared!' : 'Clear API Cache'}
