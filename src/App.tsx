@@ -54,12 +54,22 @@ export default function App() {
   useEffect(() => {
     Actions.pullTbaMatches();
     Actions.pullStatboticsEpa();
+    Actions.syncNexusData();
 
-    const interval = setInterval(() => {
+    // Fast 25s polling for real-time Nexus queuing updates
+    const nexusInterval = setInterval(() => {
+      Actions.syncNexusData();
+    }, 25000);
+
+    // 60s polling for TBA match scores & rankings
+    const tbaInterval = setInterval(() => {
       Actions.pullTbaMatches();
     }, 60000);
 
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(nexusInterval);
+      clearInterval(tbaInterval);
+    };
   }, []);
 
   // Hash-based routing & shared theme detection

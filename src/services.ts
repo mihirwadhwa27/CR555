@@ -2236,7 +2236,7 @@ export class DisplayBroadcastService {
 
 export class NexusService {
   /**
-   * Pull event live summary from FRC Nexus (via our server proxy)
+   * Pull event live summary from FRC Nexus (via server proxy or direct browser CORS fetch)
    */
   public static async pullEventSummary(
     eventKey: string,
@@ -2249,7 +2249,6 @@ export class NexusService {
     source: 'NEXUS_LIVE' | 'NEXUS_DEMO' | 'OFFLINE';
   }> {
     const cleanKey = (eventKey || 'demo1234').toLowerCase().trim();
-    const endpoint = `/api/nexus/event/${encodeURIComponent(cleanKey)}${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
 
     // Check Cache first (30s TTL for real-time queuing data)
     const cached = CacheManager.get<NexusEventSummary>('nexus', cleanKey, 'event_summary');
@@ -2262,14 +2261,76 @@ export class NexusService {
       };
     }
 
+    const isStaticHost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname.endsWith('github.io') || window.location.protocol === 'file:');
+
+    // 1. If on GitHub Pages, query frc.nexus directly via CORS
+    if (isStaticHost && apiKey && apiKey.trim()) {
+      try {
+        const resp = await fetch(`https://frc.nexus/api/v1/event/${encodeURIComponent(cleanKey)}`, {
+          headers: {
+            'Nexus-Api-Key': apiKey.trim(),
+            Accept: 'application/json',
+          },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          CacheManager.set('nexus', cleanKey, 'event_summary', data, 30);
+          return {
+            success: true,
+            data,
+            status: resp.status,
+            source: 'NEXUS_LIVE',
+          };
+        } else {
+          const errText = await resp.text();
+          return {
+            success: false,
+            error: errText || `HTTP ${resp.status}`,
+            status: resp.status,
+            source: 'OFFLINE',
+          };
+        }
+      } catch (err: any) {
+        // Continue to fallback
+      }
+    }
+
+    // 2. Try application server proxy
+    const endpoint = `/api/nexus/event/${encodeURIComponent(cleanKey)}${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
     try {
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (apiKey) {
         headers['x-nexus-api-key'] = apiKey.trim();
       }
       const resp = await fetch(endpoint, { headers });
-      const json = await resp.json();
+      
+      // If server proxy is missing (e.g. 404 or 405 on static GitHub Pages) and we have apiKey, try direct CORS fetch
+      if ((resp.status === 404 || resp.status === 405) && apiKey && apiKey.trim()) {
+        try {
+          const directResp = await fetch(`https://frc.nexus/api/v1/event/${encodeURIComponent(cleanKey)}`, {
+            headers: {
+              'Nexus-Api-Key': apiKey.trim(),
+              Accept: 'application/json',
+            },
+          });
+          if (directResp.ok) {
+            const data = await directResp.json();
+            CacheManager.set('nexus', cleanKey, 'event_summary', data, 30);
+            return {
+              success: true,
+              data,
+              status: directResp.status,
+              source: 'NEXUS_LIVE',
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
 
+      const json = await resp.json();
       if (resp.ok && json.success) {
         if (json.data) {
           CacheManager.set('nexus', cleanKey, 'event_summary', json.data, 30);
@@ -2289,6 +2350,30 @@ export class NexusService {
         };
       }
     } catch (err: any) {
+      // If server fetch failed, attempt direct browser CORS fetch
+      if (apiKey && apiKey.trim()) {
+        try {
+          const directResp = await fetch(`https://frc.nexus/api/v1/event/${encodeURIComponent(cleanKey)}`, {
+            headers: {
+              'Nexus-Api-Key': apiKey.trim(),
+              Accept: 'application/json',
+            },
+          });
+          if (directResp.ok) {
+            const data = await directResp.json();
+            CacheManager.set('nexus', cleanKey, 'event_summary', data, 30);
+            return {
+              success: true,
+              data,
+              status: directResp.status,
+              source: 'NEXUS_LIVE',
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       if (cached && cached.data) {
         return {
           success: true,
@@ -2317,6 +2402,46 @@ export class NexusService {
     message: string;
     detail?: string;
   }> {
+    const isStaticHost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname.endsWith('github.io') || window.location.protocol === 'file:');
+
+    // On static hosts, ping frc.nexus directly
+    if (isStaticHost && apiKey && apiKey.trim()) {
+      const start = performance.now();
+      try {
+        const resp = await fetch('https://frc.nexus/api/v1/event/demo1234', {
+          headers: {
+            'Nexus-Api-Key': apiKey.trim(),
+            Accept: 'application/json',
+          },
+        });
+        const latencyMs = Math.round(performance.now() - start);
+        const text = await resp.text();
+        const authenticated = resp.status === 200 || resp.status === 404;
+        return {
+          success: authenticated,
+          status: resp.status === 404 ? 200 : resp.status,
+          latencyMs,
+          authenticated,
+          message: authenticated
+            ? 'Nexus API key authenticated & verified on frc.nexus!'
+            : resp.status === 401
+            ? 'Missing Nexus API key'
+            : 'Nexus API key rejected',
+          detail: text,
+        };
+      } catch (err: any) {
+        return {
+          success: false,
+          status: 502,
+          latencyMs: Math.round(performance.now() - start),
+          authenticated: false,
+          message: `Network error reaching frc.nexus: ${err.message}`,
+        };
+      }
+    }
+
     const endpoint = `/api/nexus/ping${apiKey ? `?apiKey=${encodeURIComponent(apiKey)}` : ''}`;
     const start = performance.now();
     try {
@@ -2325,6 +2450,30 @@ export class NexusService {
         headers['x-nexus-api-key'] = apiKey.trim();
       }
       const resp = await fetch(endpoint, { headers });
+      
+      // If server proxy returns 404/405, fall back to direct CORS ping
+      if ((resp.status === 404 || resp.status === 405) && apiKey) {
+        const directResp = await fetch('https://frc.nexus/api/v1/event/demo1234', {
+          headers: {
+            'Nexus-Api-Key': apiKey.trim(),
+            Accept: 'application/json',
+          },
+        });
+        const latencyMs = Math.round(performance.now() - start);
+        const text = await directResp.text();
+        const authenticated = directResp.status === 200 || directResp.status === 404;
+        return {
+          success: authenticated,
+          status: directResp.status === 404 ? 200 : directResp.status,
+          latencyMs,
+          authenticated,
+          message: authenticated
+            ? 'Nexus API key authenticated & verified on frc.nexus!'
+            : 'Nexus API key rejected',
+          detail: text,
+        };
+      }
+
       const json = await resp.json();
       return {
         success: Boolean(json.success),
