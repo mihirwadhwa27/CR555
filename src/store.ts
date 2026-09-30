@@ -15,6 +15,7 @@ import {
   ThemeFont,
   ServiceStatus,
   DEFAULT_THEME_TOKENS,
+  THEME_PRESETS,
 } from './types';
 import { STORAGE_KEYS, StorageService, ThemeService, CacheManager, SAMPLE_1002_MATCHES, SAMPLE_1002_RANKINGS, SAMPLE_EPA_DATA, TbaService, StatboticsService, DisplayBroadcastService, NexusService } from './services';
 import { MatchModel, VideoReplayState, TelemetryLogEntry, ToolRecordModel } from './types';
@@ -1106,11 +1107,17 @@ export const Actions = {
               }))
             : s.activeEvent.metadata.webcasts;
 
+        const validNickname = teamInfo?.nickname && !teamInfo.nickname.match(/^Team \d+$/i)
+          ? teamInfo.nickname
+          : (s.config.verifiedTeamName && !s.config.verifiedTeamName.match(/^Team \d+$/i))
+          ? s.config.verifiedTeamName
+          : teamInfo?.name || teamInfo?.nickname || `Team ${teamNum}`;
+
         return {
           ...s,
           config: {
             ...s.config,
-            verifiedTeamName: teamInfo?.nickname || teamInfo?.name || s.config.verifiedTeamName,
+            verifiedTeamName: validNickname,
             verifiedTeamCity: teamInfo?.city || s.config.verifiedTeamCity,
             verifiedTeamState: teamInfo?.stateProv || s.config.verifiedTeamState,
           },
@@ -1612,20 +1619,50 @@ export const Actions = {
       },
     }));
 
+    // Auto-apply team theme preset if this team is one of the active presets
+    const presetMap: Record<number, string> = {
+      1002: 'circuitrunners-green',
+      1833: 'team-1833',
+      1771: 'team-1771',
+      2974: 'team-2974',
+      8736: 'team-8736',
+    };
+    if (presetMap[teamNumber]) {
+      const targetPreset = THEME_PRESETS.find((p) => p.id === presetMap[teamNumber]);
+      if (targetPreset) {
+        Actions.applyThemePreset(targetPreset.id, targetPreset.tokens, targetPreset.font);
+      }
+    }
+
     const apiKey = pitStore.getState().config.tbaApiKey;
     TbaService.pullTeamInfoFromTba(teamNumber, apiKey).then((info) => {
       if (info && (info.nickname || info.name)) {
+        const validName = info.nickname && !info.nickname.match(/^Team \d+$/i)
+          ? info.nickname
+          : info.name && !info.name.match(/^Team \d+$/i)
+          ? info.name
+          : immediateNickname;
+
         pitStore.setState((s) => ({
           ...s,
           config: {
             ...s.config,
-            verifiedTeamName: info.nickname || info.name,
+            verifiedTeamName: validName,
             verifiedTeamCity: info.city || s.config.verifiedTeamCity,
             verifiedTeamState: info.stateProv || s.config.verifiedTeamState,
           },
         }));
       }
     });
+  },
+
+  setTbaApiKey(tbaApiKey: string) {
+    pitStore.setState((s) => {
+      const next = { ...s.config, tbaApiKey: tbaApiKey.trim() };
+      StorageService.set(STORAGE_KEYS.CONFIG, next);
+      return { ...s, config: next };
+    });
+    Actions.pullTbaMatches();
   },
 
   addToolLoan(tool: { name: string; borrowerTeamNumber: number; borrowerContact: string; notes?: string }) {

@@ -40,14 +40,29 @@ export const SettingsView: React.FC = () => {
   const [nexusPingResult, setNexusPingResult] = useState<any>(null);
   const [isSyncingNexus, setIsSyncingNexus] = useState(false);
   const [nexusSyncResult, setNexusSyncResult] = useState<string | null>(null);
+  const [isPingingTba, setIsPingingTba] = useState(false);
+  const [tbaPingResult, setTbaPingResult] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isStatic = typeof window !== 'undefined' && (
+    window.location.hostname.endsWith('github.io') ||
+    window.location.hostname.includes('gitlab.io') ||
+    window.location.protocol === 'file:'
+  );
+
   const handleUpdateApiKey = (key: string) => {
-    pitStore.setState((s) => {
-      const next = { ...s.config, tbaApiKey: key.trim() };
-      StorageService.set(STORAGE_KEYS.CONFIG, next);
-      return { ...s, config: next };
-    });
+    Actions.setTbaApiKey(key);
+  };
+
+  const handleTestTba = async () => {
+    setIsPingingTba(true);
+    setTbaPingResult(null);
+    try {
+      const res = await Actions.pingService('tba');
+      setTbaPingResult(res);
+    } finally {
+      setIsPingingTba(false);
+    }
   };
 
   const handleUpdateNexusApiKey = (key: string) => {
@@ -347,22 +362,60 @@ export const SettingsView: React.FC = () => {
               <Key size={16} style={{ color: theme.tokens.foreground }} />
               The Blue Alliance (TBA) API Key
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400 font-mono">
+            <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+              telemetry.tba.status === 'LIVE'
+                ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-500/40'
+                : 'bg-zinc-800 text-zinc-400'
+            }`}>
               Status: {telemetry.tba.status}
             </span>
           </div>
-          <p className="text-xs text-zinc-400">
-            Shipped with default Team {teamInfo.number} key. You can input an operator override below.
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            Free Read API key from <a href="https://www.thebluealliance.com/account" target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:underline">thebluealliance.com/account</a>. On GitHub Pages, entering your TBA key enables live match schedules, scores, video replays, and division rankings directly in your browser.
           </p>
 
           <input
             id="tba-api-key-input"
             type="password"
-            value={config.tbaApiKey}
+            value={config.tbaApiKey && !config.tbaApiKey.includes('PublicPreviewKey') ? config.tbaApiKey : ''}
             onChange={(e) => handleUpdateApiKey(e.target.value)}
             className="w-full px-3 py-2 rounded-lg border text-xs font-mono bg-zinc-900 border-zinc-700 text-zinc-200 outline-hidden focus:border-amber-400"
-            placeholder="TBA v3 API Key"
+            placeholder="Paste TBA v3 API Key (e.g. from thebluealliance.com/account)"
           />
+
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              onClick={handleTestTba}
+              disabled={isPingingTba}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 transition-colors cursor-pointer"
+            >
+              <Activity size={13} className={isPingingTba ? 'animate-spin text-amber-400' : 'text-emerald-400'} />
+              <span>{isPingingTba ? 'Testing TBA...' : 'Test TBA Connection'}</span>
+            </button>
+          </div>
+
+          {tbaPingResult && (
+            <div
+              className={`p-2.5 rounded-lg text-xs font-mono flex items-start gap-2 border ${
+                tbaPingResult.success
+                  ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
+                  : 'bg-red-950/40 border-red-500/40 text-red-300'
+              }`}
+            >
+              <AlertCircle size={14} className="shrink-0 mt-0.5" />
+              <div className="min-w-0 flex-1">
+                <div className="font-bold">
+                  {tbaPingResult.success ? `Connected (${tbaPingResult.latencyMs}ms)` : 'Connection Failed'}
+                </div>
+                <div className="text-[11px] opacity-90">
+                  {tbaPingResult.success
+                    ? 'TBA API authenticated and responding.'
+                    : 'Check your TBA API key in the input above.'}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* FRC Nexus (Queuing, Announcements & Parts Requests) */}
@@ -405,6 +458,12 @@ export const SettingsView: React.FC = () => {
                 <span>Nexus Push (Webhook Receiver):</span>
                 <span className="text-[10px] text-zinc-500 font-normal">Instant field updates</span>
               </div>
+              {isStatic && (
+                <div className="text-[10px] text-zinc-400 bg-amber-500/10 border border-amber-500/30 rounded-lg p-2 my-1.5 leading-relaxed">
+                  <span className="text-amber-300 font-bold">GitHub Pages Note: </span>
+                  GitHub Pages is static hosting and cannot accept incoming POST webhooks. PitFUSION automatically runs high-speed live pull polling via your Nexus-Api-Key above every 25 seconds to keep your pit queuing and announcements synchronized.
+                </div>
+              )}
               <div>
                 <label className="text-[10px] font-mono text-zinc-400 block mb-0.5">Your Webhook URL (Paste into frc.nexus/api):</label>
                 <div className="flex items-center gap-1.5">

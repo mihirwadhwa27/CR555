@@ -22,6 +22,7 @@ import {
   Layers,
   Loader2,
   MapPin,
+  Key,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { TbaService } from '../services';
@@ -50,6 +51,7 @@ export const PulseSetupModal: React.FC = () => {
   const [isDemoModeOptedIn, setIsDemoModeOptedIn] = useState<boolean>(demoMode?.enabled ?? false);
   const [isCustomEventInput, setIsCustomEventInput] = useState<boolean>(false);
   const [customEventKey, setCustomEventKey] = useState<string>('');
+  const [tbaApiKeyInput, setTbaApiKeyInput] = useState<string>('');
 
   // Dynamically pulled competition events for the selected team from TBA
   const [teamEvents, setTeamEvents] = useState<
@@ -73,8 +75,13 @@ export const PulseSetupModal: React.FC = () => {
       setSelectedEventKey(currentEvent?.key || '2026gacmp');
       setSelectedEventName(currentEvent?.name || 'Peachtree District Championship 2026');
       setIsDemoModeOptedIn(demoMode?.enabled ?? false);
+      setTbaApiKeyInput(
+        currentConfig.tbaApiKey && !currentConfig.tbaApiKey.includes('PublicPreviewKey')
+          ? currentConfig.tbaApiKey
+          : ''
+      );
     }
-  }, [isOpen, currentTeam.number, currentTeam.name, currentEvent?.key, currentEvent?.name, demoMode?.enabled]);
+  }, [isOpen, currentTeam.number, currentTeam.name, currentEvent?.key, currentEvent?.name, demoMode?.enabled, currentConfig.tbaApiKey]);
 
   // Pull competition events and verified team name from The Blue Alliance whenever selectedTeamNumber changes
   useEffect(() => {
@@ -132,6 +139,10 @@ export const PulseSetupModal: React.FC = () => {
   };
 
   const handleSaveAndLaunch = () => {
+    if (tbaApiKeyInput.trim() && tbaApiKeyInput.trim() !== currentConfig.tbaApiKey) {
+      Actions.setTbaApiKey(tbaApiKeyInput.trim());
+    }
+
     if (isDemoModeOptedIn) {
       Actions.completeSetup({
         teamNumber: 1002,
@@ -431,6 +442,35 @@ export const PulseSetupModal: React.FC = () => {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* THE BLUE ALLIANCE API KEY (OPTIONAL FOR GITHUB PAGES) */}
+          <div className="space-y-2 p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                <Key size={14} className="text-amber-400" />
+                <span>3. The Blue Alliance (TBA) API Key</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-zinc-800 text-zinc-400 font-normal">Optional</span>
+              </label>
+              <a
+                href="https://www.thebluealliance.com/account"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] text-amber-400 hover:underline"
+              >
+                Get Free Read Key ↗
+              </a>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              On static hosts like GitHub Pages, entering your free TBA Read Key enables 100% live browser match schedules, scores, video replays, and division rankings directly from FIRST servers.
+            </p>
+            <input
+              type="password"
+              value={tbaApiKeyInput}
+              onChange={(e) => setTbaApiKeyInput(e.target.value)}
+              placeholder="Paste your TBA v3 API Key (or leave blank for built-in roster)"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 focus:outline-hidden focus:border-amber-400"
+            />
           </div>
         </div>
 
