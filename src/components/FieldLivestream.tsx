@@ -31,20 +31,22 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
     if (activeEvent?.webcasts && activeEvent.webcasts.length > 0) {
       // Look for YouTube stream first
       const ytWebcast = activeEvent.webcasts.find((w) => w.type === 'youtube');
-      if (ytWebcast) {
+      if (ytWebcast && (ytWebcast.channel || (ytWebcast as any).file)) {
+        const chan = (ytWebcast.channel || (ytWebcast as any).file || '').trim();
         setStreamType('youtube');
-        setStreamIdOrUrl(ytWebcast.channel);
+        setStreamIdOrUrl(chan || 'UCr_x7a303YmQ61V81kP0gqQ');
         setStreamTitle(ytWebcast.name || `${activeEvent.shortName || activeEvent.name} YouTube Live`);
       } else {
         const primaryWebcast = activeEvent.webcasts[0];
-        if (primaryWebcast.type === 'twitch') {
+        const streamChannel = (primaryWebcast?.channel || (primaryWebcast as any)?.file || '').trim();
+        if (primaryWebcast?.type === 'twitch') {
           setStreamType('twitch');
-          setStreamIdOrUrl(primaryWebcast.channel);
-          setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} Twitch Live`);
+          setStreamIdOrUrl(streamChannel || 'firstinspires');
+          setStreamTitle(primaryWebcast?.name || `${activeEvent.shortName || activeEvent.name} Twitch Live`);
         } else {
           setStreamType('youtube');
-          setStreamIdOrUrl(primaryWebcast.channel);
-          setStreamTitle(primaryWebcast.name || `${activeEvent.shortName || activeEvent.name} Live Stream`);
+          setStreamIdOrUrl(streamChannel || 'UCr_x7a303YmQ61V81kP0gqQ');
+          setStreamTitle(primaryWebcast?.name || `${activeEvent.shortName || activeEvent.name} Live Stream`);
         }
       }
     } else if (activeEvent?.name) {
@@ -137,16 +139,17 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
   };
 
   const getEmbedUrl = () => {
+    const safeStreamId = (typeof streamIdOrUrl === 'string' ? streamIdOrUrl : '').trim() || 'UCr_x7a303YmQ61V81kP0gqQ';
     if (streamType === 'twitch') {
       const currentHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-      return `https://player.twitch.tv/?channel=${streamIdOrUrl}&parent=${currentHost}&autoplay=true&muted=true`;
+      return `https://player.twitch.tv/?channel=${encodeURIComponent(safeStreamId)}&parent=${currentHost}&autoplay=true&muted=true`;
     }
 
     // YouTube: handle whether it's a channel ID or specific video ID
-    if (streamIdOrUrl.startsWith('UC') || streamIdOrUrl.length > 15) {
-      return `https://www.youtube.com/embed/live_stream?channel=${streamIdOrUrl}&autoplay=1&mute=1&playsinline=1`;
+    if (safeStreamId.startsWith('UC') || safeStreamId.length > 15) {
+      return `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(safeStreamId)}&autoplay=1&mute=1&playsinline=1`;
     }
-    return `https://www.youtube.com/embed/${streamIdOrUrl}?autoplay=1&mute=1&playsinline=1&rel=0`;
+    return `https://www.youtube.com/embed/${encodeURIComponent(safeStreamId)}?autoplay=1&mute=1&playsinline=1&rel=0`;
   };
 
   return (
@@ -180,10 +183,10 @@ export const FieldLivestream: React.FC<FieldLivestreamProps> = ({ compact = fals
           <a
             href={
               streamType === 'twitch'
-                ? `https://twitch.tv/${streamIdOrUrl}`
-                : streamIdOrUrl.startsWith('UC')
-                ? `https://youtube.com/channel/${streamIdOrUrl}/live`
-                : `https://youtube.com/watch?v=${streamIdOrUrl}`
+                ? `https://twitch.tv/${encodeURIComponent((typeof streamIdOrUrl === 'string' ? streamIdOrUrl : 'firstinspires').trim())}`
+                : typeof streamIdOrUrl === 'string' && streamIdOrUrl.startsWith('UC')
+                ? `https://youtube.com/channel/${encodeURIComponent(streamIdOrUrl.trim())}/live`
+                : `https://youtube.com/watch?v=${encodeURIComponent((typeof streamIdOrUrl === 'string' ? streamIdOrUrl : 'UCr_x7a303YmQ61V81kP0gqQ').trim())}`
             }
             target="_blank"
             rel="noopener noreferrer"

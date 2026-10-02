@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Activity,
   AlertCircle,
+  Tv,
 } from 'lucide-react';
 import { usePitState, pitStore, Selectors, Actions } from '../store';
 import { StorageService, STORAGE_KEYS } from '../services';
@@ -32,6 +33,7 @@ export const SettingsView: React.FC = () => {
   const telemetry = usePitState((s) => s.telemetry);
   const customLogoUrl = usePitState(Selectors.customLogoUrl);
   const demoMode = usePitState(Selectors.demoMode);
+  const isDrivenScreen = usePitState(Selectors.isDrivenScreen);
 
   const [clearedNotice, setClearedNotice] = useState(false);
   const [logoInputUrl, setLogoInputUrl] = useState(customLogoUrl || '');
@@ -550,6 +552,50 @@ export const SettingsView: React.FC = () => {
                 {nexusSyncResult}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Multi-Screen & Driven Display Card */}
+        <div className="p-4 rounded-xl bg-black/40 border border-zinc-800 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-zinc-200 font-semibold text-sm">
+              <Tv size={16} className="text-blue-400" />
+              <span>Multi-Screen & Driven Pit Display</span>
+            </div>
+            <span
+              className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border self-start sm:self-auto ${
+                isDrivenScreen
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                  : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+              }`}
+            >
+              {isDrivenScreen ? 'DRIVEN DISPLAY ACTIVE' : 'INDEPENDENT SCREEN'}
+            </span>
+          </div>
+          <p className="text-xs text-zinc-400">
+            Designate this screen to be remotely controlled by the Pit Operations Controller. When enabled, commands sent from the Controller (such as switching tabs or replaying matches) smoothly drive this display without changing the Controller itself.
+          </p>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button
+              onClick={() => Actions.toggleDrivenScreen()}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                isDrivenScreen
+                  ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 shadow-xs'
+                  : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border-zinc-700'
+              }`}
+            >
+              <Tv size={13} className={isDrivenScreen ? 'animate-pulse' : ''} />
+              <span>{isDrivenScreen ? 'This Screen is Driven (Click to Disable)' : 'Make This Screen the Driven One'}</span>
+            </button>
+
+            <button
+              onClick={() => window.open(window.location.href.split('#')[0] + '?driven=true#dashboard', '_blank')}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-zinc-900 border border-zinc-700 text-zinc-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <ExternalLink size={13} />
+              <span>Launch New Dedicated Driven Screen</span>
+            </button>
           </div>
         </div>
 

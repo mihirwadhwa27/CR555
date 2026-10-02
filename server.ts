@@ -444,17 +444,26 @@ async function fetchEventMatchesFromTba(eventKey: string, apiKey?: string) {
 
   // Scrape event match table (supports both qual-match-table and playoff-match-table)
   try {
-    const resp = await fetch(`https://www.thebluealliance.com/event/${eventKey}`);
+    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+    const resp = await fetch(`https://www.thebluealliance.com/event/${eventKey}`, {
+      headers: { 'User-Agent': userAgent, Accept: 'text/html' },
+    });
     if (resp.ok) {
       const html = await resp.text();
 
-      // Extract all video IDs if available
-      const videoIdsMatch = html.match(/video_ids=([a-zA-Z0-9_\-,]+)/);
-      const videoIdsList = videoIdsMatch ? videoIdsMatch[1].split(',') : [];
+      // Extract qual and playoff playlists separately
+      const qualPlaylistMatch = html.match(/video_ids=([a-zA-Z0-9_\-,]+)[^"]*title=[^"]*Qualifications/i) ||
+                                html.match(/video_ids=([a-zA-Z0-9_\-,]+)/i);
+      const qualVideoIds = qualPlaylistMatch ? qualPlaylistMatch[1].split(',') : [];
+
+      const playoffPlaylistMatch = html.match(/video_ids=([a-zA-Z0-9_\-,]+)[^"]*title=[^"]*Playoffs/i);
+      const playoffVideoIds = playoffPlaylistMatch ? playoffPlaylistMatch[1].split(',') : [];
 
       const parsedMatches: any[] = [];
       const rowRegex = /<tr[^>]*class="[^"]*visible-lg[^"]*"[^>]*>([\s\S]*?)<\/tr>/gi;
       let rm: RegExpExecArray | null;
+      let qualIndex = 0;
+      let playoffIndex = 0;
       let rowIndex = 0;
 
       while ((rm = rowRegex.exec(html)) !== null) {
@@ -467,7 +476,7 @@ async function fetchEventMatchesFromTba(eventKey: string, apiKey?: string) {
 
         // Determine competition level and numbers from key e.g. 2024cc_qm12, 2024cc_sf1m1, 2024cc_f1m1
         let compLevel = 'QUAL';
-        let matchNumber = rowIndex + 1;
+        let matchNumber = 1;
         let setNumber = 1;
 
         const keyParts = matchKey.match(/_([a-z]+)(\d+)(?:m(\d+))?$/i);
@@ -490,7 +499,7 @@ async function fetchEventMatchesFromTba(eventKey: string, apiKey?: string) {
           }
         } else {
           const numMatch = matchName.match(/\d+/);
-          matchNumber = numMatch ? parseInt(numMatch[0], 10) : rowIndex + 1;
+          matchNumber = numMatch ? parseInt(numMatch[0], 10) : 1;
           if (matchName.toLowerCase().includes('final')) {
             compLevel = 'FINALS';
           } else if (matchName.toLowerCase().includes('playoff') || matchName.toLowerCase().includes('semi')) {
@@ -529,13 +538,19 @@ async function fetchEventMatchesFromTba(eventKey: string, apiKey?: string) {
           else winner = 'tie';
         }
 
-        // YouTube Video
+        // YouTube Video - accurately mapped from quals and playoff playlists
         const videos: any[] = [];
-        if (videoIdsList[rowIndex]) {
-          videos.push({ type: 'youtube', key: videoIdsList[rowIndex] });
+        if (compLevel === 'QUAL') {
+          const vKey = qualVideoIds[matchNumber - 1] || qualVideoIds[qualIndex];
+          if (vKey) videos.push({ type: 'youtube', key: vKey });
+          qualIndex++;
+        } else {
+          const vKey = playoffVideoIds[playoffIndex] || qualVideoIds[qualIndex];
+          if (vKey) videos.push({ type: 'youtube', key: vKey });
+          playoffIndex++;
         }
 
-        const baseTime = Date.now() - (50 - rowIndex) * 600 * 1000;
+        const baseTime = Date.now() - (110 - (qualIndex + playoffIndex)) * 600 * 1000;
 
         parsedMatches.push({
           key: matchKey,
@@ -645,6 +660,15 @@ async function fetchEventRankingsFromTba(eventKey: string, apiKey?: string) {
         const rankings: any[] = [];
         let rIndex = 1;
 
+        // Pre-fetch team names for this event to populate rankings with official team nicknames
+        const teamNameMap = new Map<number, string>();
+        try {
+          const eventTeams = await fetchEventTeamsFromTba(eventKey, apiKey);
+          if (Array.isArray(eventTeams)) {
+            eventTeams.forEach((t) => teamNameMap.set(t.teamNumber, t.name));
+          }
+        } catch {}
+
         while ((rm = rowRegex.exec(tbodyHtml)) !== null) {
           const rowContent = rm[1];
           const cells = [...rowContent.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((c) =>
@@ -674,7 +698,7 @@ async function fetchEventRankingsFromTba(eventKey: string, apiKey?: string) {
             rankings.push({
               rank,
               teamNumber: teamNum,
-              teamName: `Team ${teamNum}`,
+              teamName: teamNameMap.get(teamNum) || `Team ${teamNum}`,
               rankingScore,
               record,
               matchesPlayed: played,

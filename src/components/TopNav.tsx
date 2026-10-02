@@ -14,6 +14,7 @@ import {
   Clock,
   SlidersHorizontal,
   Sparkles,
+  Tv,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { NavigationTab } from '../types';
@@ -42,6 +43,7 @@ export const TopNav: React.FC = () => {
   const isStrategyUnlocked = usePitState(Selectors.isStrategyUnlocked);
   const demoMode = usePitState(Selectors.demoMode);
   const customLogoUrl = usePitState(Selectors.customLogoUrl);
+  const isDrivenScreen = usePitState(Selectors.isDrivenScreen);
 
   // Live Competition / Arena Clock (with Demo Mode simulation support)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -186,6 +188,30 @@ export const TopNav: React.FC = () => {
                 <span>DEMO: Day 2 @ 11:30 AM</span>
               </button>
             )}
+
+            {/* Driven Screen Mode Button */}
+            <button
+              id="make-driven-screen-btn"
+              onClick={() => Actions.toggleDrivenScreen()}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-xs ${
+                isDrivenScreen
+                  ? 'border-blue-500/60 bg-blue-500/20 text-blue-200 hover:bg-blue-500/30 ring-1 ring-blue-500/40'
+                  : 'border-zinc-800 bg-zinc-900/90 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+              }`}
+              title={
+                isDrivenScreen
+                  ? 'Driven Display: ACTIVE • This screen is automatically controlled by the Pit Operations Controller. Click to make this screen independent.'
+                  : 'Make This Screen the Driven One • Click so this screen follows remote commands from the Pit Operations Controller.'
+              }
+            >
+              <Tv size={13} className={isDrivenScreen ? 'text-blue-400 animate-pulse shrink-0' : 'text-zinc-400 shrink-0'} />
+              <span className="hidden sm:inline font-mono">
+                {isDrivenScreen ? 'Driven Screen: ON' : 'Make Driven Screen'}
+              </span>
+              <span className="sm:hidden font-mono text-[10px]">
+                {isDrivenScreen ? 'Driven' : 'Follow'}
+              </span>
+            </button>
 
             {/* Pulse Setup Wizard Button */}
             <button

@@ -1,5 +1,5 @@
 /**
- * Unified Match Schedule & Video Replay Studio (Dense TBA Beta Format)
+ * Unified Match Schedule & Video Replay Studio (The Blue Alliance v3 Format)
  * PitFUSION 2.0 - Team 1002 CircuitRunners
  * 
  * Features:
@@ -630,7 +630,7 @@ export const ScheduleView: React.FC = () => {
                                 key={t}
                                 teamNumber={t}
                                 highlightActive={t === teamInfo.number}
-                                variant={redWon ? 'red' : 'default'}
+                                variant={redWon ? 'red' : 'neutral'}
                               />
                             ))}
                           </div>
@@ -644,7 +644,7 @@ export const ScheduleView: React.FC = () => {
                                 key={t}
                                 teamNumber={t}
                                 highlightActive={t === teamInfo.number}
-                                variant={blueWon ? 'blue' : 'default'}
+                                variant={blueWon ? 'blue' : 'neutral'}
                               />
                             ))}
                           </div>
@@ -806,7 +806,7 @@ export const ScheduleView: React.FC = () => {
             {/* TBA Link */}
             <div className="pt-3 border-t border-zinc-800 flex items-center justify-between text-zinc-400 text-[11px]">
               <a
-                href={`https://beta.thebluealliance.com/event/${activeEvent.key}`}
+                href={`https://www.thebluealliance.com/event/${activeEvent.key}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors"

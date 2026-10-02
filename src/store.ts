@@ -230,17 +230,48 @@ export function createInitialState(): ApplicationState {
         latencyMs: 96,
       },
     ],
-    ui: {
-      activeTab: 'dashboard',
-      isSetupModalOpen: false,
-      isThemeModalOpen: false,
-      isStrategyModalOpen: false,
-      isStrategyUnlocked: false,
-      replayMode: {
-        isActive: false,
-        matchKey: null,
-      },
-    },
+    ui: (() => {
+      let initialTab: NavigationTab = 'dashboard';
+      let initialIsDriven = false;
+      if (typeof window !== 'undefined') {
+        const hash = window.location.hash.replace('#', '') as NavigationTab;
+        if (
+          hash &&
+          ['dashboard', 'watch', 'schedule', 'previous', 'playoffs', 'controller', 'tools', 'settings', 'scout'].includes(hash)
+        ) {
+          initialTab = hash;
+        }
+        const searchParams = new URLSearchParams(window.location.search);
+        const drivenParam = searchParams.get('driven');
+        const storedDriven = sessionStorage.getItem('pitfusion_is_driven_screen');
+
+        if (drivenParam === 'true') {
+          initialIsDriven = true;
+          sessionStorage.setItem('pitfusion_is_driven_screen', 'true');
+        } else if (drivenParam === 'false') {
+          initialIsDriven = false;
+          sessionStorage.setItem('pitfusion_is_driven_screen', 'false');
+        } else if (storedDriven !== null) {
+          initialIsDriven = storedDriven === 'true';
+        } else {
+          // Default to driven screen for any display unless opened on the controller view
+          initialIsDriven = initialTab !== 'controller';
+        }
+      }
+      return {
+        activeTab: initialTab,
+        remoteTargetTab: initialTab,
+        isDrivenScreen: initialIsDriven,
+        isSetupModalOpen: false,
+        isThemeModalOpen: false,
+        isStrategyModalOpen: false,
+        isStrategyUnlocked: false,
+        replayMode: {
+          isActive: false,
+          matchKey: null,
+        },
+      };
+    })(),
   };
 }
 
@@ -262,25 +293,41 @@ export class Store {
 
       // Initialize Cross-Tab and Remote Display Sync Channel
       DisplayBroadcastService.init((msg) => {
+        const current = pitStore.getState();
+
         if (msg.type === 'NAVIGATE' && msg.payload) {
+          // Always record what the remote driven screen is displaying
           pitStore.setState((s) => ({
             ...s,
-            ui: { ...s.ui, activeTab: msg.payload },
+            ui: { ...s.ui, remoteTargetTab: msg.payload },
           }));
-          if (window.location.hash !== `#${msg.payload}`) {
-            window.location.hash = `#${msg.payload}`;
+
+          // ONLY navigate THIS window if this window is actively marked as the DRIVEN SCREEN
+          // and this window is NOT currently being used as the Controller!
+          if (current.ui.isDrivenScreen && current.ui.activeTab !== 'controller') {
+            pitStore.setState((s) => ({
+              ...s,
+              ui: { ...s.ui, activeTab: msg.payload },
+            }));
+            if (window.location.hash !== `#${msg.payload}`) {
+              window.location.hash = `#${msg.payload}`;
+            }
           }
         } else if (msg.type === 'VIDEO_COMMAND' && msg.payload) {
-          pitStore.setState((s) => ({
-            ...s,
-            videoReplay: {
-              ...s.videoReplay,
-              ...msg.payload,
-              commandNonce: s.videoReplay.commandNonce + 1,
-            },
-          }));
+          // Only execute video commands if this is the driven screen or currently in previous/watch tab
+          if (current.ui.isDrivenScreen || current.ui.activeTab === 'previous' || current.ui.activeTab === 'watch') {
+            pitStore.setState((s) => ({
+              ...s,
+              videoReplay: {
+                ...s.videoReplay,
+                ...msg.payload,
+                commandNonce: s.videoReplay.commandNonce + 1,
+              },
+            }));
+          }
         } else if (msg.type === 'MODE_TOGGLE' && msg.payload) {
-          if (typeof msg.payload.tenFootMode === 'boolean') {
+          // Only toggle 10-foot mode remotely if this is the driven screen
+          if (current.ui.isDrivenScreen && typeof msg.payload.tenFootMode === 'boolean') {
             pitStore.setState((s) => ({
               ...s,
               config: { ...s.config, tenFootMode: msg.payload.tenFootMode },
@@ -517,6 +564,8 @@ export const Selectors = {
   nexusApiKey: (s: ApplicationState) => s.config.nexusApiKey || '',
   nexusWebhookToken: (s: ApplicationState) => s.config.nexusWebhookToken || '',
   nexusManualEventKey: (s: ApplicationState) => s.config.nexusManualEventKey || '',
+  isDrivenScreen: (s: ApplicationState) => s.ui.isDrivenScreen,
+  remoteTargetTab: (s: ApplicationState) => s.ui.remoteTargetTab || s.ui.activeTab,
 };
 
 // ==========================================
@@ -977,6 +1026,8 @@ export const Actions = {
         },
       };
     });
+    Actions.pullTbaMatches(eventKey);
+    Actions.pullStatboticsEpa();
   },
 
   updateServiceHealth(service: 'tba' | 'nexus' | 'statbotics', status: ServiceStatus, error?: string) {
@@ -996,8 +1047,35 @@ export const Actions = {
   },
 
   broadcastNavigate(tab: NavigationTab) {
-    Actions.navigate(tab);
     DisplayBroadcastService.broadcast('NAVIGATE', tab);
+
+    pitStore.setState((s) => ({
+      ...s,
+      ui: {
+        ...s.ui,
+        remoteTargetTab: tab,
+        // Only navigate locally if this window is actively a driven screen AND not the controller deck
+        activeTab: s.ui.activeTab !== 'controller' && s.ui.isDrivenScreen ? tab : s.ui.activeTab,
+      },
+    }));
+  },
+
+  setDrivenScreen(isDriven: boolean) {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('pitfusion_is_driven_screen', isDriven ? 'true' : 'false');
+        localStorage.setItem('pitfusion_is_driven_screen', isDriven ? 'true' : 'false');
+      } catch {}
+    }
+    pitStore.setState((s) => ({
+      ...s,
+      ui: { ...s.ui, isDrivenScreen: isDriven },
+    }));
+  },
+
+  toggleDrivenScreen() {
+    const current = pitStore.getState().ui.isDrivenScreen;
+    this.setDrivenScreen(!current);
   },
 
   sendVideoCommand(commandType: 'seek' | 'play' | 'pause' | 'rate' | 'phase', value?: any) {
@@ -1635,6 +1713,9 @@ export const Actions = {
     }
 
     const apiKey = pitStore.getState().config.tbaApiKey;
+    Actions.pullTbaMatches();
+    Actions.pullStatboticsEpa();
+
     TbaService.pullTeamInfoFromTba(teamNumber, apiKey).then((info) => {
       if (info && (info.nickname || info.name)) {
         const validName = info.nickname && !info.nickname.match(/^Team \d+$/i)

@@ -485,6 +485,8 @@ export interface ApplicationState {
 
   ui: {
     activeTab: NavigationTab;
+    remoteTargetTab: NavigationTab;
+    isDrivenScreen: boolean;
     isSetupModalOpen: boolean;
     isThemeModalOpen: boolean;
     isStrategyModalOpen: boolean;

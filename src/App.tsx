@@ -78,7 +78,7 @@ export default function App() {
       const hash = window.location.hash.replace(/^#/, '');
 
       // Check for shared theme parameter
-      if (hash.startsWith('theme=')) {
+      if (hash && typeof hash.startsWith === 'function' && hash.startsWith('theme=')) {
         const encoded = hash.replace('theme=', '');
         const decoded = ThemeService.decodeSharedTheme(encoded);
         if (decoded && decoded.tokens) {

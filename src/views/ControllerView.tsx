@@ -39,6 +39,8 @@ import { NavigationTab, MatchModel } from '../types';
 export const ControllerView: React.FC = () => {
   const theme = usePitState(Selectors.themeConfig);
   const currentTab = usePitState(Selectors.currentTab);
+  const isDrivenScreen = usePitState(Selectors.isDrivenScreen);
+  const remoteTargetTab = usePitState(Selectors.remoteTargetTab);
   const activeEvent = usePitState(Selectors.activeEvent);
   const matchInfo = usePitState(Selectors.effectiveMatchInfo);
   const tenFootMode = usePitState(Selectors.tenFootMode);
@@ -138,12 +140,24 @@ export const ControllerView: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => window.open(window.location.href.split('#')[0] + '#dashboard', '_blank')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-900 border border-zinc-700 text-zinc-200 hover:text-white hover:bg-zinc-800 transition-colors"
-            title="Open an isolated display screen for the pit TV"
+            onClick={() => window.open(window.location.href.split('#')[0] + '?driven=true#dashboard', '_blank')}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-xs transition-colors cursor-pointer"
+            title="Open a dedicated Driven Display screen in a new window/tab for the pit TV"
           >
             <ExternalLink size={13} />
-            Launch Display Screen
+            Launch Driven Screen
+          </button>
+          <button
+            onClick={() => Actions.toggleDrivenScreen()}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+              isDrivenScreen
+                ? 'bg-blue-500/20 text-blue-300 border-blue-500/50'
+                : 'bg-zinc-900 border-zinc-700 text-zinc-300 hover:text-white hover:bg-zinc-800'
+            }`}
+            title="Toggle whether this screen is also driven by remote controller commands"
+          >
+            <Tv size={13} />
+            {isDrivenScreen ? 'This Screen: Driven (ON)' : 'Make This Screen Driven'}
           </button>
           <button
             onClick={() => Actions.toggleTenFootMode()}
@@ -171,43 +185,55 @@ export const ControllerView: React.FC = () => {
           <div className="flex items-center gap-2">
             <Tv size={18} style={{ color: theme.tokens.foreground }} />
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">
-              Display Screen Director (Control Active Page)
+              Display Screen Director (Control Driven Pit Screen)
             </h2>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-zinc-400">
-            <span>Active Display:</span>
-            <span className="font-mono font-bold text-emerald-400 uppercase">
-              {currentTab}
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-zinc-400">Driven Screen Showing:</span>
+            <span className="font-mono font-bold text-blue-400 px-2.5 py-0.5 rounded bg-blue-500/10 border border-blue-500/30 uppercase">
+              {remoteTargetTab || 'dashboard'}
             </span>
           </div>
         </div>
 
-        <p className="text-xs text-zinc-400">
-          Click any view below to instantaneously switch what the main pit monitor is showing. Cross-window broadcast synchronization keeps external pit TVs in lockstep with this controller.
-        </p>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-blue-950/20 border border-blue-800/40 text-xs text-blue-200">
+          <div className="flex items-center gap-2">
+            <Radio size={14} className="text-blue-400 animate-pulse shrink-0" />
+            <span>
+              <strong>Independent Controller Active:</strong> Pressing any view below targets and changes your <strong>Driven Screen</strong> while this Controller remains open.
+            </span>
+          </div>
+          <button
+            onClick={() => window.open(window.location.href.split('#')[0] + '?driven=true#dashboard', '_blank')}
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-400 hover:text-blue-300 underline shrink-0 cursor-pointer"
+          >
+            <ExternalLink size={12} />
+            Launch Driven Screen in New Window
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {displayPages.map((page) => {
-            const isActive = currentTab === page.id;
+            const isActiveOnDriven = (remoteTargetTab || 'dashboard') === page.id;
             return (
               <button
                 key={page.id}
                 onClick={() => handleSwitchDisplayPage(page.id)}
                 className={`p-3.5 rounded-xl border text-left flex flex-col justify-between transition-all group cursor-pointer ${
-                  isActive
-                    ? 'border-emerald-500 bg-emerald-500/10 shadow-md ring-1 ring-emerald-500/40'
+                  isActiveOnDriven
+                    ? 'border-blue-500 bg-blue-500/15 shadow-md ring-1 ring-blue-500/40'
                     : 'border-zinc-800 bg-black/40 hover:border-zinc-700 hover:bg-black/60'
                 }`}
               >
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xl">{page.icon}</span>
-                  {isActive ? (
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-500 text-black">
-                      ACTIVE DISPLAY
+                  {isActiveOnDriven ? (
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-500 text-white">
+                      ACTIVE ON DRIVEN SCREEN
                     </span>
                   ) : (
-                    <span className="text-[10px] font-mono text-zinc-500 group-hover:text-zinc-300">
-                      Switch →
+                    <span className="text-[10px] font-mono text-zinc-500 group-hover:text-blue-300">
+                      Drive Screen →
                     </span>
                   )}
                 </div>
@@ -555,14 +581,14 @@ export const ControllerView: React.FC = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 font-bold text-xs text-zinc-200">
                 <Server size={14} className="text-blue-400" />
-                The Blue Alliance Beta
+                The Blue Alliance API v3
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
                 {telemetry.tba.status}
               </span>
             </div>
             <div className="text-[11px] text-zinc-400 font-mono truncate">
-              https://beta.thebluealliance.com/api/v3
+              https://www.thebluealliance.com/api/v3
             </div>
             <div className="flex items-center justify-between text-xs pt-1">
               <span className="text-zinc-500">HTTP Status:</span>
@@ -573,7 +599,7 @@ export const ControllerView: React.FC = () => {
                 onClick={() => Actions.pingService('tba')}
                 className="w-full py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-zinc-200 transition-colors"
               >
-                Ping TBA Beta Service
+                Ping TBA Service
               </button>
             </div>
           </div>
