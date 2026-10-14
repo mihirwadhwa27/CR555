@@ -147,3 +147,17 @@ export function sortTournamentMatches(matches: MatchModel[]): MatchModel[] {
     return (a.matchNumber || 1) - (b.matchNumber || 1);
   });
 }
+
+/**
+ * Recency formatter for telemetry and competition cache data
+ */
+export function formatTimeAgo(timestamp?: number | null): string {
+  if (!timestamp) return 'Just now';
+  const diffSec = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (diffSec < 15) return 'Just now';
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHours = Math.floor(diffMin / 60);
+  return `${diffHours}h ago`;
+}

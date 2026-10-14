@@ -168,8 +168,9 @@ export const ThemeModal: React.FC = () => {
               <div className="text-xl font-black font-mono tracking-tight" style={{ color: theme.tokens.foreground }}>
                 14:28
               </div>
-              <span className="text-[10px]" style={{ color: theme.tokens.accent }}>
-                ● On Schedule
+              <span className="text-[10px] flex items-center gap-1" style={{ color: theme.tokens.accent }}>
+                <span className="w-1.5 h-1.5 rounded-full bg-current inline-block" />
+                <span>On Schedule</span>
               </span>
             </div>
 

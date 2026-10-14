@@ -7,7 +7,7 @@
  * real-time API telemetry diagnostics, and pit broadcast alerts.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sliders,
   Tv,
@@ -32,9 +32,18 @@ import {
   ChevronRight,
   Maximize2,
   Sparkles,
+  LayoutDashboard,
+  Calendar,
+  Trophy,
+  Target,
+  Wrench,
+  Settings,
+  Shuffle,
+  BarChart3,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { NavigationTab, MatchModel } from '../types';
+import { QualityControlService, getRandomQcTeams } from '../services/qualityControl';
 
 export const ControllerView: React.FC = () => {
   const theme = usePitState(Selectors.themeConfig);
@@ -49,22 +58,55 @@ export const ControllerView: React.FC = () => {
   const telemetryLogs = usePitState(Selectors.telemetryLogs);
   const matches = usePitState(Selectors.matches);
   const replayMatches = usePitState(Selectors.replayMatches);
+  const teamInfo = usePitState(Selectors.teamInfo);
+  const pulseMode = usePitState(Selectors.pulseSimulatorState);
+  const countdownSeconds = usePitState(Selectors.countdownSeconds);
+  const demoMode = usePitState(Selectors.demoMode);
 
   // Local controller states
   const [customEventKey, setCustomEventKey] = useState(activeEvent?.key || '2026gacmp');
   const [isPullingTba, setIsPullingTba] = useState(false);
   const [tbaPullSuccess, setTbaPullSuccess] = useState<string | null>(null);
   const [manualMatchOverride, setManualMatchOverride] = useState('');
+  const [qcStatusMessage, setQcStatusMessage] = useState<string | null>(null);
+  const [isRunningControllerQc, setIsRunningControllerQc] = useState(false);
+  const [simTeamInput, setSimTeamInput] = useState(String(teamInfo.number || 1002));
 
-  // Page switcher options
-  const displayPages: Array<{ id: NavigationTab; title: string; desc: string; icon: string }> = [
-    { id: 'dashboard', title: 'Pit Dashboard', desc: 'Active countdown, queue status, current ranking', icon: '📊' },
-    { id: 'schedule', title: 'Match Schedule', desc: 'Full event match timeline & upcoming alliances', icon: '📅' },
-    { id: 'previous', title: 'Video Replays', desc: 'Completed match scores & video playback scrubber', icon: '⏪' },
-    { id: 'playoffs', title: 'Playoff Bracket', desc: 'Alliance selection & double-elimination tree', icon: '🏆' },
-    { id: 'scout', title: 'Strategy & Scouting', desc: 'Team classifications, picklist & notes', icon: '🎯' },
-    { id: 'tools', title: 'Tool Loan Registry', desc: 'Inventory borrowing & return tracker', icon: '🔧' },
-    { id: 'settings', title: 'System Settings', desc: 'API keys, display settings, and preferences', icon: '⚙️' },
+  const previewIframeRef = useRef<HTMLIFrameElement>(null);
+
+  const sendIframeMessage = (func: string, args: any[] = []) => {
+    try {
+      previewIframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func, args }),
+        '*'
+      );
+    } catch (e) {
+      console.warn('Iframe postMessage error:', e);
+    }
+  };
+
+  useEffect(() => {
+    if (!videoReplay.commandType) return;
+    if (videoReplay.commandType === 'rate') {
+      sendIframeMessage('setPlaybackRate', [videoReplay.playbackRate]);
+    } else if (videoReplay.commandType === 'play') {
+      sendIframeMessage('playVideo', []);
+    } else if (videoReplay.commandType === 'pause') {
+      sendIframeMessage('pauseVideo', []);
+    } else if (videoReplay.commandType === 'seek') {
+      sendIframeMessage('seekTo', [videoReplay.currentTime, true]);
+    }
+  }, [videoReplay.commandNonce, videoReplay.commandType, videoReplay.playbackRate, videoReplay.currentTime]);
+
+  // Page switcher options with open-source icons
+  const displayPages: Array<{ id: NavigationTab; title: string; desc: string; icon: React.ReactNode }> = [
+    { id: 'dashboard', title: 'Pit Dashboard', desc: 'Active countdown, queue status, current ranking', icon: <LayoutDashboard size={20} className="text-amber-400" /> },
+    { id: 'schedule', title: 'Match Schedule', desc: 'Full event match timeline & upcoming alliances', icon: <Calendar size={20} className="text-blue-400" /> },
+    { id: 'previous', title: 'Video Replays', desc: 'Completed match scores & video playback scrubber', icon: <Film size={20} className="text-purple-400" /> },
+    { id: 'playoffs', title: 'Playoff Bracket', desc: 'Alliance selection & double-elimination tree', icon: <Trophy size={20} className="text-amber-400" /> },
+    { id: 'scout', title: 'Strategy & Scouting', desc: 'Team classifications, picklist & notes', icon: <Target size={20} className="text-rose-400" /> },
+    { id: 'tools', title: 'Tool Loan Registry', desc: 'Inventory borrowing & return tracker', icon: <Wrench size={20} className="text-orange-400" /> },
+    { id: 'settings', title: 'System Settings', desc: 'API keys, display settings, and preferences', icon: <Settings size={20} className="text-zinc-400" /> },
   ];
 
   // Handlers
@@ -83,6 +125,22 @@ export const ControllerView: React.FC = () => {
       }
     } finally {
       setIsPullingTba(false);
+    }
+  };
+
+  const handleRunQcInController = async () => {
+    setIsRunningControllerQc(true);
+    setQcStatusMessage('Executing 10-Pass QC across random teams...');
+    try {
+      const report = await QualityControlService.runMultiPassQC(10);
+      setQcStatusMessage(
+        `QC Complete: ${report.passRate}% Pass Rate (${report.passedChecks}/${report.totalChecks} checks across ${report.testedTeams.length} random teams)`
+      );
+      setTimeout(() => setQcStatusMessage(null), 8000);
+    } catch (e: any) {
+      setQcStatusMessage(`QC Error: ${e.message}`);
+    } finally {
+      setIsRunningControllerQc(false);
     }
   };
 
@@ -247,6 +305,170 @@ export const ControllerView: React.FC = () => {
         </div>
       </div>
 
+      {/* SECTION: Simulated Competition & Quality Control Deck */}
+      <div
+        className="rounded-2xl p-5 border shadow-sm space-y-4"
+        style={{
+          backgroundColor: theme.tokens.secondary,
+          borderColor: theme.tokens.border,
+        }}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400">
+              <ShieldCheck size={18} />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                Simulated Competition & Quality Controls
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                    demoMode?.enabled
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                  }`}
+                >
+                  {demoMode?.enabled ? 'SIMULATOR ACTIVE' : 'LIVE DATA MODE'}
+                </span>
+              </h2>
+              <p className="text-xs text-zinc-400">
+                Run randomized quality control sweeps and step through live competition states for any FRC team.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRunQcInController}
+              disabled={isRunningControllerQc}
+              className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-md"
+            >
+              <BarChart3 size={13} className={isRunningControllerQc ? 'animate-spin' : ''} />
+              <span>{isRunningControllerQc ? 'Testing Passes...' : 'Run 10-Pass QC Suite'}</span>
+            </button>
+            {demoMode?.enabled ? (
+              <button
+                onClick={() => Actions.disableDemoMode()}
+                className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer border border-zinc-700"
+              >
+                <RotateCcw size={13} />
+                <span>Disable Sim</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => Actions.enableDemoMode(teamInfo.number || 1002, activeEvent?.key || '2026gacmp', 0)}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+              >
+                <Play size={13} />
+                <span>Enable Sim</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {qcStatusMessage && (
+          <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-800/60 flex items-center justify-between gap-2 text-xs font-mono text-blue-200">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+              <span>{qcStatusMessage}</span>
+            </div>
+            <button
+              onClick={() => setQcStatusMessage(null)}
+              className="text-zinc-400 hover:text-white cursor-pointer"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {/* Quick Simulation Stepper */}
+          <div className="p-4 rounded-xl bg-black/40 border border-zinc-800 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="text-xs font-bold text-white uppercase tracking-wider mb-1">
+                Competition Match Progression
+              </div>
+              <div className="text-[11px] text-zinc-400 font-sans">
+                Advance tournament matches to complete queued matches and recompute standings.
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                onClick={() => Actions.advanceSimulatedCompetition()}
+                className="flex-1 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Play size={12} />
+                <span>Next Match Step</span>
+              </button>
+              <button
+                onClick={() => Actions.resetSimulatedCompetition()}
+                className="px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold text-xs cursor-pointer"
+                title="Reset simulation to initial step"
+              >
+                <RotateCcw size={12} />
+              </button>
+            </div>
+          </div>
+
+          {/* Random Team Selector */}
+          <div className="p-4 rounded-xl bg-black/40 border border-zinc-800 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="text-xs font-bold text-white uppercase tracking-wider mb-1">
+                Random Team Cohort Test
+              </div>
+              <div className="text-[11px] text-zinc-400 font-sans">
+                Instantly swap active simulation to an authentic randomized FRC team.
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                const randoms = getRandomQcTeams(1);
+                if (randoms.length > 0) {
+                  Actions.enableDemoMode(randoms[0], activeEvent?.key || '2026gacmp', 0);
+                  setSimTeamInput(String(randoms[0]));
+                }
+              }}
+              className="w-full py-2 rounded-lg bg-purple-900/50 hover:bg-purple-900/70 text-purple-200 border border-purple-800/60 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Shuffle size={12} className="text-purple-400" />
+              <span>Pick Random Team & Simulate</span>
+            </button>
+          </div>
+
+          {/* Direct Team Number Switcher */}
+          <div className="p-4 rounded-xl bg-black/40 border border-zinc-800 flex flex-col justify-between space-y-3">
+            <div>
+              <div className="text-xs font-bold text-white uppercase tracking-wider mb-1">
+                Custom Team Simulator
+              </div>
+              <div className="text-[11px] text-zinc-400 font-sans">
+                Specify any FRC number (e.g. 254, 1678, 1771, 1002) to verify full telemetry.
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                placeholder="Team #"
+                value={simTeamInput}
+                onChange={(e) => setSimTeamInput(e.target.value)}
+                className="w-24 px-2.5 py-1.5 rounded-lg bg-black/60 border border-zinc-800 text-white text-xs font-mono outline-hidden focus:border-zinc-600"
+              />
+              <button
+                onClick={() => {
+                  const num = Number(simTeamInput);
+                  if (num > 0) {
+                    Actions.enableDemoMode(num, activeEvent?.key || '2026gacmp', 0);
+                  }
+                }}
+                className="flex-1 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs cursor-pointer border border-zinc-700"
+              >
+                Apply Team
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* SECTION 3: Video Replay Scrubber & Rewind Control Deck */}
       <div
         className="rounded-2xl p-5 border shadow-sm space-y-4"
@@ -285,9 +507,15 @@ export const ControllerView: React.FC = () => {
             <div className="relative aspect-video w-full bg-zinc-950">
               {videoReplay.youtubeId ? (
                 <iframe
-                  src={`https://www.youtube-nocookie.com/embed/${videoReplay.youtubeId}?autoplay=${
+                  ref={previewIframeRef}
+                  onLoad={() => {
+                    if (videoReplay.playbackRate && videoReplay.playbackRate !== 1.0) {
+                      sendIframeMessage('setPlaybackRate', [videoReplay.playbackRate]);
+                    }
+                  }}
+                  src={`https://www.youtube.com/embed/${videoReplay.youtubeId}?autoplay=${
                     videoReplay.isPlaying ? 1 : 0
-                  }&start=${Math.floor(videoReplay.currentTime)}&rel=0&enablejsapi=1`}
+                  }&start=${Math.floor(videoReplay.currentTime)}&rel=0&enablejsapi=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
                   title="FRC Match Replay"
                   className="w-full h-full border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -388,12 +616,16 @@ export const ControllerView: React.FC = () => {
               {[0.25, 0.5, 1.0, 1.5, 2.0].map((rate) => (
                 <button
                   key={rate}
-                  onClick={() => Actions.sendVideoCommand('rate', rate)}
-                  className={`px-2.5 py-1 rounded text-xs font-mono font-semibold transition-colors ${
+                  onClick={() => {
+                    Actions.sendVideoCommand('rate', rate);
+                    sendIframeMessage('setPlaybackRate', [rate]);
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-semibold transition-colors cursor-pointer ${
                     videoReplay.playbackRate === rate
-                      ? 'bg-emerald-500 text-black'
+                      ? 'bg-emerald-500 text-black font-black'
                       : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
                   }`}
+                  title={`Set video analysis speed to ${rate}x`}
                 >
                   {rate}x
                 </button>
@@ -437,12 +669,12 @@ export const ControllerView: React.FC = () => {
 
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-zinc-300">Quick Event Presets</label>
-            <div className="flex items-center gap-1.5">
-              {['2026gacmp', '2026gadal', '2025gacmp'].map((key) => (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {['2026gadal', '2026joh', '2026tuis', '2026wabon', '2026cacv', '2026gacmp'].map((key) => (
                 <button
                   key={key}
                   onClick={() => setCustomEventKey(key)}
-                  className={`px-2.5 py-1.5 rounded text-xs font-mono transition-colors ${
+                  className={`px-2 py-1 rounded text-xs font-mono transition-colors ${
                     customEventKey === key
                       ? 'bg-zinc-700 text-white font-bold'
                       : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
@@ -466,6 +698,53 @@ export const ControllerView: React.FC = () => {
           </div>
         </div>
 
+        {/* Pulse State Simulator Controller */}
+        <div className="p-3.5 rounded-xl bg-black/40 border border-zinc-800/80 space-y-2 font-mono">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${
+                pulseMode === 'NO_MATCHES' ? 'bg-emerald-400' :
+                pulseMode === 'NOW_QUEUING' ? 'bg-amber-400 animate-pulse' :
+                pulseMode === 'ON_DECK' ? 'bg-orange-500 animate-pulse' :
+                'bg-blue-400'
+              }`} />
+              <span className="text-xs font-bold text-white uppercase tracking-wider">
+                Pulse State Simulator:
+              </span>
+              <span className="text-[11px] text-zinc-400">
+                (Updates all pages, displays & top navigation pill in real-time)
+              </span>
+            </div>
+            <span className="text-xs font-bold text-amber-400 tabular-nums">
+              {pulseMode === 'NO_MATCHES' ? 'Done' : `${Math.floor(countdownSeconds / 60)}m ${countdownSeconds % 60 < 10 ? '0' : ''}${countdownSeconds % 60}s`}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 text-xs font-bold text-center">
+            {(
+              [
+                { id: 'AUTO', label: 'Auto (Countdown)', bg: 'bg-blue-600' },
+                { id: 'QUEUE_5MIN', label: 'Queue 5m', bg: 'bg-amber-600' },
+                { id: 'ON_DECK', label: 'On Deck (2m)', bg: 'bg-orange-600' },
+                { id: 'NOW_QUEUING', label: 'Now Queuing (30s)', bg: 'bg-rose-600' },
+                { id: 'NO_MATCHES', label: 'Matches Done', bg: 'bg-emerald-600' },
+              ] as const
+            ).map((item) => (
+              <button
+                key={item.id}
+                onClick={() => Actions.setPulseSimulatorState(item.id)}
+                className={`px-2 py-2 rounded-lg transition-all cursor-pointer truncate ${
+                  pulseMode === item.id
+                    ? `${item.bg} text-white shadow-md ring-1 ring-white/30`
+                    : 'bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {tbaPullSuccess && (
           <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-800/80 text-emerald-300 text-xs flex items-center gap-2 animate-fadeIn">
             <CheckCircle2 size={16} />
@@ -476,13 +755,13 @@ export const ControllerView: React.FC = () => {
         {/* Available Match Replays List */}
         <div className="space-y-2 pt-2">
           <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">
-            Available Match Replays for Team 1002:
+            Available Match Replays for Team {teamInfo.number}:
           </span>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5 max-h-56 overflow-y-auto pr-1">
             {matches.map((m) => {
               const hasVideo = m.videos && m.videos.length > 0;
               const isSelected = videoReplay.activeMatchKey === m.key;
-              const isBlue = m.blueAlliance.teams.includes(1002);
+              const isBlue = m.blueAlliance.teams.includes(teamInfo.number);
               const teamScore = isBlue ? m.blueAlliance.score : m.redAlliance.score;
               const oppScore = isBlue ? m.redAlliance.score : m.blueAlliance.score;
               const isWon = m.winner && ((isBlue && m.winner === 'blue') || (!isBlue && m.winner === 'red'));
@@ -558,7 +837,7 @@ export const ControllerView: React.FC = () => {
               onClick={() => {
                 Actions.pingService('tba');
                 Actions.pingService('nexus');
-                Actions.pingService('statbotics');
+                Actions.pingService('match13');
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white transition-colors"
             >
@@ -646,30 +925,36 @@ export const ControllerView: React.FC = () => {
             </div>
           </div>
 
-          {/* Statbotics Telemetry */}
+          {/* Match 13 Telemetry */}
           <div className="p-4 rounded-xl bg-black/40 border border-zinc-800 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 font-bold text-xs text-zinc-200">
                 <ShieldCheck size={14} className="text-emerald-400" />
-                Statbotics EPA Engine
+                Match 13 System Engine
               </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
-                {telemetry.statbotics.status}
+              <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold border ${
+                telemetry.match13?.status === 'LIVE'
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : telemetry.match13?.status === 'RECENT'
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                  : 'bg-zinc-700/40 text-zinc-300 border-zinc-700'
+              }`}>
+                {telemetry.match13?.status || 'LIVE'}
               </span>
             </div>
             <div className="text-[11px] text-zinc-400 font-mono truncate">
-              https://api.statbotics.io/v3/team
+              https://api.match13.com
             </div>
             <div className="flex items-center justify-between text-xs pt-1">
-              <span className="text-zinc-500">EPA Models:</span>
-              <span className="font-mono text-zinc-300 font-bold">48 Teams Live</span>
+              <span className="text-zinc-500">xP Ratings & Forecasts:</span>
+              <span className="font-mono text-zinc-300 font-bold">Active Proxy</span>
             </div>
             <div className="pt-2">
               <button
-                onClick={() => Actions.pingService('statbotics')}
-                className="w-full py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-zinc-200 transition-colors"
+                onClick={() => Actions.pingService('match13')}
+                className="w-full py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-zinc-200 transition-colors cursor-pointer"
               >
-                Ping Statbotics Service
+                Ping Match 13 Service
               </button>
             </div>
           </div>
@@ -701,7 +986,7 @@ export const ControllerView: React.FC = () => {
                           ? 'bg-blue-500/20 text-blue-400'
                           : log.service === 'NEXUS'
                           ? 'bg-amber-500/20 text-amber-400'
-                          : log.service === 'STATBOTICS'
+                          : log.service === 'MATCH13' || log.service === 'STATBOTICS'
                           ? 'bg-emerald-500/20 text-emerald-400'
                           : 'bg-purple-500/20 text-purple-400'
                       }`}

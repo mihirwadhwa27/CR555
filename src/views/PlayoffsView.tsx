@@ -26,7 +26,7 @@ import {
   Eye,
   Sliders,
 } from 'lucide-react';
-import { usePitState, Actions, Selectors } from '../store';
+import { usePitState, pitStore, Actions, Selectors } from '../store';
 import { useModularLayout, SegmentConfig } from '../hooks/useModularLayout';
 import { ModularSegment } from '../components/ModularSegment';
 import { ModularLayoutToolbar } from '../components/ModularLayoutToolbar';
@@ -298,7 +298,78 @@ export const PlayoffsView: React.FC = () => {
   const activeEvent = usePitState(Selectors.activeEvent);
   const teamInfo = usePitState(Selectors.teamInfo);
 
-  const [selectedMatch, setSelectedMatch] = useState<BracketMatch>(UPPER_MATCHES[2]); // Default to Match 3 (Team 1002)
+  const playoffData = React.useMemo(() => {
+    if (teamInfo.number === 1002 && (!activeEvent?.key || activeEvent.key.includes('gacmp'))) {
+      return {
+        alliances: ALLIANCES_DATA,
+        upperMatches: UPPER_MATCHES,
+        lowerMatches: LOWER_MATCHES,
+        ourAlliance: ALLIANCES_DATA[1],
+      };
+    }
+
+    const targetTeam = teamInfo.number;
+    const baseRankings = pitStore.getState().activeEvent.rankings;
+    const topTeams = baseRankings && baseRankings.length >= 24
+      ? baseRankings.map((r) => r.teamNumber)
+      : [targetTeam, 1771, 1833, 4188, 2974, 1261, 4509, 3635, 6919, 1648, 8736, 8080, 6705, 9477, 6829, 4026, 6023, 1414, 5109, 1683, 1746, 7451, 4112, 9480];
+
+    const pool = Array.from(new Set([targetTeam, ...topTeams]));
+    while (pool.length < 24) pool.push(pool.length * 100 + 1000);
+
+    const dynamicAlliances: typeof ALLIANCES_DATA = [];
+    for (let i = 1; i <= 8; i++) {
+      const capt = pool[i - 1];
+      const p1 = pool[16 - i];
+      const p2 = pool[16 + i - 1];
+      dynamicAlliances.push({
+        number: i,
+        captain: capt,
+        pick1: p1,
+        pick2: p2,
+        epa: parseFloat((165 - i * 4.2).toFixed(1)),
+        status: i === 1 ? 'CHAMPIONS' : i === 2 ? 'FINALISTS' : `LOWER R${Math.max(2, 6 - i)}`,
+      });
+    }
+
+    const ourAlliance = dynamicAlliances.find(
+      (a) => a.captain === targetTeam || a.pick1 === targetTeam || a.pick2 === targetTeam
+    ) || dynamicAlliances[1];
+
+    const upperMatches = UPPER_MATCHES.map((m) => {
+      const redA = dynamicAlliances[m.redAllianceNumber - 1];
+      const blueA = dynamicAlliances[m.blueAllianceNumber - 1];
+      return {
+        ...m,
+        redTeams: redA ? [redA.captain, redA.pick1, redA.pick2] : m.redTeams,
+        blueTeams: blueA ? [blueA.captain, blueA.pick1, blueA.pick2] : m.blueTeams,
+      };
+    });
+
+    const lowerMatches = LOWER_MATCHES.map((m) => {
+      const redA = dynamicAlliances[m.redAllianceNumber - 1];
+      const blueA = dynamicAlliances[m.blueAllianceNumber - 1];
+      return {
+        ...m,
+        redTeams: redA ? [redA.captain, redA.pick1, redA.pick2] : m.redTeams,
+        blueTeams: blueA ? [blueA.captain, blueA.pick1, blueA.pick2] : m.blueTeams,
+      };
+    });
+
+    return {
+      alliances: dynamicAlliances,
+      upperMatches,
+      lowerMatches,
+      ourAlliance,
+    };
+  }, [teamInfo.number, activeEvent?.key]);
+
+  const [selectedMatch, setSelectedMatch] = useState<BracketMatch>(() => {
+    const ourMatch = playoffData.upperMatches.find(
+      (m) => m.redTeams.includes(teamInfo.number) || m.blueTeams.includes(teamInfo.number)
+    );
+    return ourMatch || playoffData.upperMatches[2];
+  });
   const [viewMode, setViewMode] = useState<BracketViewMode>('all');
   const [cardScale, setCardScale] = useState<BracketCardScale>('pit_large');
 
@@ -561,10 +632,10 @@ export const PlayoffsView: React.FC = () => {
                       <div className="md:hidden text-[11px] font-bold text-zinc-400 uppercase">
                         Upper Round 1
                       </div>
-                      {renderBracketCard(UPPER_MATCHES[0])}
-                      {renderBracketCard(UPPER_MATCHES[1])}
-                      {renderBracketCard(UPPER_MATCHES[2])}
-                      {renderBracketCard(UPPER_MATCHES[3])}
+                      {renderBracketCard(playoffData.upperMatches[0])}
+                      {renderBracketCard(playoffData.upperMatches[1])}
+                      {renderBracketCard(playoffData.upperMatches[2])}
+                      {renderBracketCard(playoffData.upperMatches[3])}
                     </div>
 
                     {/* Upper Round 2 (2 matches) */}
@@ -572,9 +643,9 @@ export const PlayoffsView: React.FC = () => {
                       <div className="md:hidden text-[11px] font-bold text-zinc-400 uppercase">
                         Upper Round 2
                       </div>
-                      {renderBracketCard(UPPER_MATCHES[4])}
+                      {renderBracketCard(playoffData.upperMatches[4])}
                       <div className="h-6 hidden md:block" />
-                      {renderBracketCard(UPPER_MATCHES[5])}
+                      {renderBracketCard(playoffData.upperMatches[5])}
                     </div>
 
                     {/* Upper Round 4 (1 match) */}
@@ -582,7 +653,7 @@ export const PlayoffsView: React.FC = () => {
                       <div className="md:hidden text-[11px] font-bold text-zinc-400 uppercase">
                         Upper Round 4 (Semi)
                       </div>
-                      {renderBracketCard(UPPER_MATCHES[6])}
+                      {renderBracketCard(playoffData.upperMatches[6])}
                     </div>
 
                     {/* Finals Series (1 match card) */}
@@ -591,7 +662,7 @@ export const PlayoffsView: React.FC = () => {
                         Championship Finals
                       </div>
                       <div className="p-1 rounded-xl border border-amber-500/50 bg-amber-950/20 shadow-lg">
-                        {renderBracketCard(UPPER_MATCHES[7])}
+                        {renderBracketCard(playoffData.upperMatches[7])}
                       </div>
                     </div>
                   </div>
@@ -629,8 +700,8 @@ export const PlayoffsView: React.FC = () => {
                       <div className="md:hidden text-[11px] font-bold text-zinc-400 uppercase">
                         Lower Round 2
                       </div>
-                      {renderBracketCard(LOWER_MATCHES[0])}
-                      {renderBracketCard(LOWER_MATCHES[1])}
+                      {renderBracketCard(playoffData.lowerMatches[0])}
+                      {renderBracketCard(playoffData.lowerMatches[1])}
                     </div>
 
                     {/* Lower Round 3 (2 matches) */}
@@ -638,8 +709,8 @@ export const PlayoffsView: React.FC = () => {
                       <div className="md:hidden text-[11px] font-bold text-zinc-400 uppercase">
                         Lower Round 3
                       </div>
-                      {renderBracketCard(LOWER_MATCHES[2])}
-                      {renderBracketCard(LOWER_MATCHES[3])}
+                      {renderBracketCard(playoffData.lowerMatches[2])}
+                      {renderBracketCard(playoffData.lowerMatches[3])}
                     </div>
 
                     {/* Lower Round 4 (1 match) */}
@@ -647,7 +718,7 @@ export const PlayoffsView: React.FC = () => {
                       <div className="md:hidden text-[11px] font-bold text-zinc-400 uppercase">
                         Lower Round 4
                       </div>
-                      {renderBracketCard(LOWER_MATCHES[4])}
+                      {renderBracketCard(playoffData.lowerMatches[4])}
                     </div>
 
                     {/* Lower Round 5 (1 match) */}
@@ -655,7 +726,7 @@ export const PlayoffsView: React.FC = () => {
                       <div className="md:hidden text-[11px] font-bold text-zinc-400 uppercase">
                         Lower Round 5 (Qualifier)
                       </div>
-                      {renderBracketCard(LOWER_MATCHES[5])}
+                      {renderBracketCard(playoffData.lowerMatches[5])}
                     </div>
                   </div>
                 </div>
@@ -674,7 +745,7 @@ export const PlayoffsView: React.FC = () => {
                     <h3 className="text-lg font-black text-white font-mono">Alliance 1 vs Alliance 2</h3>
                   </div>
                   <div className="p-2 rounded-2xl border border-amber-500/50 bg-amber-950/20 shadow-xl">
-                    {renderBracketCard(UPPER_MATCHES[7])}
+                    {renderBracketCard(playoffData.upperMatches[7])}
                   </div>
                 </div>
               )}
@@ -684,7 +755,7 @@ export const PlayoffsView: React.FC = () => {
             <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs font-mono text-zinc-400 shrink-0">
               <span>{activeEvent?.name || 'Tournament'} • 8-Alliance Double Elimination</span>
               <div className="flex items-center gap-3">
-                <span className="text-amber-400 font-bold">Team {teamInfo.number} (Alliance 2 Finalists)</span>
+                <span className="text-amber-400 font-bold">Team {teamInfo.number} (Alliance #{playoffData.ourAlliance.number} {playoffData.ourAlliance.status})</span>
                 <span className="text-emerald-400 font-bold">BRACKET COMPLETE</span>
               </div>
             </div>
@@ -753,11 +824,11 @@ export const PlayoffsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Statbotics Projected Win Probability */}
+              {/* Match 13 Projected Win Probability */}
               {selectedMatch.epaPred && (
                 <div className="p-3 rounded-xl bg-black/40 border border-zinc-800 space-y-2 text-xs">
                   <div className="flex justify-between items-center text-zinc-300 font-bold">
-                    <span>Statbotics Win Expectancy</span>
+                    <span>Match 13 Win Expectancy</span>
                     <span className="text-amber-400 font-bold">
                       Red {selectedMatch.epaPred.winProb}% • Blue {100 - selectedMatch.epaPred.winProb}%
                     </span>
@@ -820,7 +891,7 @@ export const PlayoffsView: React.FC = () => {
                   : 'grid-cols-1 sm:grid-cols-2'
               }`}
             >
-              {ALLIANCES_DATA.map((alliance) => {
+              {playoffData.alliances.map((alliance) => {
                 const isOurTeam =
                   alliance.captain === teamInfo.number || alliance.pick1 === teamInfo.number || alliance.pick2 === teamInfo.number;
                 return (
@@ -882,7 +953,7 @@ export const PlayoffsView: React.FC = () => {
             {/* Bottom Footer */}
             <div className="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-[11px] font-mono text-zinc-400 shrink-0">
               <span>8 Alliances • 24 Teams</span>
-              <span className="text-amber-400 font-bold">Alliance #2 (Captain {teamInfo.number})</span>
+              <span className="text-amber-400 font-bold">Alliance #{playoffData.ourAlliance.number} ({playoffData.ourAlliance.captain === teamInfo.number ? 'Captain' : 'Pick'} {teamInfo.number})</span>
             </div>
           </div>
         );
@@ -915,7 +986,7 @@ export const PlayoffsView: React.FC = () => {
                 Double Elimination Playoff Bracket
               </span>
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                FINALISTS (ALLIANCE 2)
+                {playoffData.ourAlliance.status} (ALLIANCE #{playoffData.ourAlliance.number})
               </span>
             </div>
             <div className="text-zinc-400 text-[11px] font-mono">
@@ -927,7 +998,7 @@ export const PlayoffsView: React.FC = () => {
         <div className="flex items-center gap-2">
           <div className="px-3 py-1 rounded-lg bg-black/40 border border-zinc-800 text-xs text-zinc-300">
             <span className="text-zinc-500 mr-1.5">Team {teamInfo.number} Alliance:</span>
-            <span className="text-amber-400 font-bold">Alliance #2 (Captain)</span>
+            <span className="text-amber-400 font-bold">Alliance #{playoffData.ourAlliance.number} ({playoffData.ourAlliance.captain === teamInfo.number ? 'Captain' : 'Pick'})</span>
           </div>
         </div>
       </div>

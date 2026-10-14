@@ -5,7 +5,7 @@
  * Features:
  * - Fully modular segment architecture with customizable ordering, resizing, and collapse
  * - Immediate Upcoming Match Schedule & Live Division Ranking
- * - Team Statistics & Statbotics EPA Breakdown
+ * - Team Statistics & Match 13 xP Breakdown
  * - Simplified Active Match Queue Call
  * - Field Livestream with TBA auto-detect and Twitch/YouTube links
  * - Team hover badges everywhere for team names
@@ -63,9 +63,11 @@ const DEFAULT_SEGMENTS: SegmentConfig[] = [
 export const DashboardView: React.FC = () => {
   const teamInfo = usePitState(Selectors.teamInfo);
   const matchInfo = usePitState(Selectors.effectiveMatchInfo);
+  const nextUpcomingMatchFromStore = usePitState(Selectors.nextUpcomingMatch);
   const theme = usePitState(Selectors.themeConfig);
   const rankings = usePitState(Selectors.rankings);
-  const epaData = usePitState(Selectors.epa);
+  const epaData = usePitState(Selectors.match13Ratings);
+  const match13Forecasts = usePitState(Selectors.match13Forecasts);
   const activeTeamEpa = usePitState(Selectors.activeTeamEpa);
   const matches = usePitState(Selectors.matches);
   const announcements = usePitState(Selectors.announcements);
@@ -73,22 +75,24 @@ export const DashboardView: React.FC = () => {
   const demoMode = usePitState(Selectors.demoMode);
   const activeEvent = usePitState(Selectors.activeEvent);
   const customLogoUrl = usePitState(Selectors.customLogoUrl);
+  const queue = usePitState(Selectors.queue);
+  const isVerticalMode = usePitState(Selectors.isVerticalMode);
 
-  const [isSyncingStatbotics, setIsSyncingStatbotics] = useState(false);
-  const [statboticsMsg, setStatboticsMsg] = useState<string | null>(null);
+  const [isSyncingMatch13, setIsSyncingMatch13] = useState(false);
+  const [match13Msg, setMatch13Msg] = useState<string | null>(null);
 
-  const handleSyncStatbotics = async () => {
-    setIsSyncingStatbotics(true);
-    setStatboticsMsg('Syncing EPA with Statbotics API...');
+  const handleSyncMatch13 = async () => {
+    setIsSyncingMatch13(true);
+    setMatch13Msg('Syncing xP ratings & forecasts with Match 13 API...');
     try {
-      await Actions.pullStatboticsEpa();
-      setStatboticsMsg('Statbotics EPA synced successfully');
-      setTimeout(() => setStatboticsMsg(null), 3000);
+      await Actions.pullMatch13Ratings();
+      setMatch13Msg('Match 13 ratings synced successfully');
+      setTimeout(() => setMatch13Msg(null), 3000);
     } catch {
-      setStatboticsMsg('Sync completed');
-      setTimeout(() => setStatboticsMsg(null), 3000);
+      setMatch13Msg('Sync completed');
+      setTimeout(() => setMatch13Msg(null), 3000);
     } finally {
-      setIsSyncingStatbotics(false);
+      setIsSyncingMatch13(false);
     }
   };
 
@@ -115,21 +119,17 @@ export const DashboardView: React.FC = () => {
   const [newPartUrgency, setNewPartUrgency] = useState<'HIGH' | 'MEDIUM' | 'LOW'>('MEDIUM');
   const [isAddingPart, setIsAddingPart] = useState(false);
 
-  // Pulse Queue Call state (with automatic countdown logic and manual simulator presets)
-  const [pulseMode, setPulseMode] = useState<'AUTO' | 'QUEUE_5MIN' | 'ON_DECK' | 'NOW_QUEUING' | 'NO_MATCHES'>('AUTO');
+  // Pulse Queue Call state (synchronized globally across all views and devices via central store)
+  const pulseMode = usePitState(Selectors.pulseSimulatorState) || 'AUTO';
+  const setPulseMode = (mode: 'AUTO' | 'QUEUE_5MIN' | 'ON_DECK' | 'NOW_QUEUING' | 'NO_MATCHES') => {
+    Actions.setPulseSimulatorState(mode);
+  };
 
   // Upcoming matches view filter: Active team schedule vs All Field schedule
   const [upcomingFilter, setUpcomingFilter] = useState<'TEAM_ONLY' | 'ALL_FIELD'>('TEAM_ONLY');
 
-  // Auto countdown
-  const [secondsUntilNextMatch, setSecondsUntilNextMatch] = useState(1080);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setSecondsUntilNextMatch((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
+  // Synchronized countdown from store (shared identically with Apple LiveActivityPill)
+  const secondsUntilNextMatch = usePitState(Selectors.countdownSeconds);
 
   const formatCountdown = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
@@ -152,10 +152,10 @@ export const DashboardView: React.FC = () => {
     AudioAnnouncer.speak(`Attention ${teamInfo.name} Team ${teamInfo.number}: ${phrase}. ${subtext}`);
   };
 
-  // Auto-sync matches & EPA from TBA whenever event or team changes
+  // Auto-sync matches & xP ratings from TBA and Match 13 whenever event or team changes
   useEffect(() => {
     Actions.pullTbaMatches();
-    Actions.pullStatboticsEpa();
+    Actions.pullMatch13Ratings();
   }, [activeEvent?.key, teamInfo.number]);
 
   // Form submit handlers
@@ -216,7 +216,15 @@ export const DashboardView: React.FC = () => {
     return rankings.length > 0 ? rankings.slice(0, 10) : [];
   }, [rankings]);
 
-  const currentMatch = displayUpcoming[0];
+  const currentMatch = useMemo(() => {
+    if (nextUpcomingMatchFromStore) return nextUpcomingMatchFromStore;
+    if (matchInfo.nextMatchNumber) {
+      const found = allEventMatches.find((m) => m.matchNumber === matchInfo.nextMatchNumber);
+      if (found) return found;
+    }
+    return displayUpcoming[0] || allEventMatches[0];
+  }, [nextUpcomingMatchFromStore, matchInfo.nextMatchNumber, allEventMatches, displayUpcoming]);
+
   const redTeams = useMemo(() => currentMatch?.redAlliance.teams || [teamInfo.number], [currentMatch, teamInfo.number]);
   const blueTeams = useMemo(() => currentMatch?.blueAlliance.teams || [], [currentMatch]);
 
@@ -224,23 +232,33 @@ export const DashboardView: React.FC = () => {
     (teamsList: number[]) => {
       return teamsList.reduce((acc, tNum) => {
         const matchTeam = epaData[tNum];
-        return acc + (matchTeam && matchTeam.totalEPA !== null ? matchTeam.totalEPA : 45.0);
+        const val = matchTeam && matchTeam.totalXP !== null && matchTeam.totalXP !== undefined
+          ? matchTeam.totalXP
+          : (matchTeam?.totalEPA ?? 45.0);
+        return acc + val;
       }, 0);
     },
     [epaData]
   );
 
-  const { redAllianceEPA, blueAllianceEPA, epaDiff, blueWinProb } = useMemo(() => {
+  const currentForecast = useMemo(() => {
+    if (!currentMatch) return null;
+    return match13Forecasts[currentMatch.key] || null;
+  }, [currentMatch, match13Forecasts]);
+
+  const { redAllianceEPA, blueAllianceEPA, epaDiff, blueWinProb, redWinProb } = useMemo(() => {
     const redEPA = calcAllianceEPA(redTeams);
     const blueEPA = calcAllianceEPA(blueTeams);
     const diff = blueEPA - redEPA;
-    const prob = Math.min(
+    const computedBlueProb = Math.min(
       95,
       Math.max(5, Math.round((1 / (1 + Math.pow(10, (redEPA - blueEPA) / 50))) * 100))
     );
+    const redProb = currentForecast ? Math.round(currentForecast.redWinProbability * 100) : (100 - computedBlueProb);
+    const blueProb = currentForecast ? Math.round(currentForecast.blueWinProbability * 100) : computedBlueProb;
 
-    return { redAllianceEPA: redEPA, blueAllianceEPA: blueEPA, epaDiff: diff, blueWinProb: prob };
-  }, [redTeams, blueTeams, calcAllianceEPA]);
+    return { redAllianceEPA: redEPA, blueAllianceEPA: blueEPA, epaDiff: diff, blueWinProb: blueProb, redWinProb: redProb };
+  }, [redTeams, blueTeams, calcAllianceEPA, currentForecast]);
 
   // FIRST Pulse Status calculation for Active Queue Call
   const getPulseStatus = () => {
@@ -311,6 +329,8 @@ export const DashboardView: React.FC = () => {
     };
   };
 
+  const pulseStatus = getPulseStatus();
+
   // Field queue for All Field Matches preview in Upcoming
   const allUpcomingField = allEventMatches.filter((m) => m.status !== 'COMPLETED');
   const allFieldQueue =
@@ -368,27 +388,54 @@ export const DashboardView: React.FC = () => {
           >
             {/* Next Match Status Header */}
             <div className="flex items-center justify-between gap-1.5 pb-1.5 border-b border-zinc-800 font-mono shrink-0">
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                 <CrLogo size={18} customUrl={customLogoUrl} accentColor="#fbbf24" />
                 <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-                <span className="font-bold text-white text-xs sm:text-sm uppercase tracking-wider truncate">
-                  Qual {matchInfo.nextMatchNumber || 13}
-                </span>
+                <button
+                  onClick={() => currentMatch && Actions.selectScheduleMatch(currentMatch.key)}
+                  className="font-bold text-white text-xs sm:text-sm uppercase tracking-wider truncate hover:text-amber-300 transition-colors cursor-pointer text-left"
+                  title="Click to view this exact match in the Match Schedule"
+                >
+                  {currentMatch ? formatMatchLabel(currentMatch) : `Qual ${matchInfo.nextMatchNumber || 13}`}
+                </button>
+                {teamAllMatches.length > 1 && (
+                  <select
+                    value={currentMatch?.matchNumber || ''}
+                    onChange={(e) => {
+                      const num = parseInt(e.target.value, 10);
+                      if (!isNaN(num)) {
+                        Actions.setNextMatchNumber(num);
+                      }
+                    }}
+                    className="bg-black/60 border border-zinc-700 text-amber-300 font-mono text-[10px] font-bold rounded px-1 py-0.5 outline-hidden cursor-pointer hover:border-amber-400 transition-colors"
+                    title="Switch active match in Next Match Scouting & Matchup"
+                  >
+                    {teamAllMatches.map((m) => (
+                      <option key={m.key} value={m.matchNumber} className="bg-zinc-900 text-white">
+                        {formatMatchLabel(m, true)} {m.status === 'COMPLETED' ? '(Final)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30 shrink-0">
                   {redTeams.includes(teamInfo.number)
                     ? `RED ${redTeams.indexOf(teamInfo.number) + 1} • ${teamInfo.number}`
                     : `BLUE ${blueTeams.indexOf(teamInfo.number) + 1} • ${teamInfo.number}`}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 shadow-xs shrink-0">
+              <button
+                onClick={() => currentMatch && Actions.selectScheduleMatch(currentMatch.key)}
+                className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 shadow-xs shrink-0 hover:bg-amber-500/25 transition-colors cursor-pointer"
+                title="Click to open this match in Match Schedule"
+              >
                 <Clock size={11} className="text-amber-400 animate-pulse shrink-0" />
                 <div className="flex items-baseline gap-1">
                   <span className="text-[9px] font-bold uppercase text-amber-300/80 hidden sm:inline">In:</span>
-                  <span className="text-xs sm:text-sm font-black font-mono tracking-tight text-amber-300">
-                    {formatCountdown(secondsUntilNextMatch)}
+                  <span className="text-xs sm:text-sm font-black font-mono tracking-tight text-amber-300 tabular-nums">
+                    {pulseMode === 'NO_MATCHES' || (currentMatch?.status === 'COMPLETED' && pulseMode === 'AUTO') ? 'FINAL' : formatCountdown(secondsUntilNextMatch)}
                   </span>
                 </div>
-              </div>
+              </button>
             </div>
 
             {/* Scrollable Middle: Next Match In-Depth Roster & Strategy */}
@@ -402,13 +449,16 @@ export const DashboardView: React.FC = () => {
                       <span className="w-2 h-2 rounded-full bg-red-500" />
                       <span className="font-bold text-red-400 tracking-wider">RED ALLIANCE</span>
                     </div>
-                    <span className="text-red-300 font-bold">{redAllianceEPA.toFixed(1)} EPA</span>
+                    <span className="text-red-300 font-bold">{redAllianceEPA.toFixed(1)} xP</span>
                   </div>
 
                   <div className="space-y-1.5">
                     {redTeams.map((tNum, idx) => {
                       const isOur = tNum === teamInfo.number;
-                      const tEpa = epaData[tNum]?.totalEPA ?? 48.0;
+                      const matchTeam = epaData[tNum];
+                      const tEpa = (matchTeam && matchTeam.totalXP !== null && matchTeam.totalXP !== undefined)
+                        ? matchTeam.totalXP
+                        : (matchTeam?.totalEPA ?? 48.0);
                       const tName = isOur ? teamInfo.name : getTeamName(tNum);
                       return (
                         <div
@@ -435,12 +485,13 @@ export const DashboardView: React.FC = () => {
                               </span>
                             </div>
                             <span className={`${isOur ? 'text-red-200 font-bold' : 'text-zinc-300'} text-xs shrink-0 font-mono`}>
-                              {tEpa.toFixed(1)} EPA
+                              {tEpa.toFixed(1)} xP
                             </span>
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-zinc-400">
                             <span className="text-zinc-400 text-[10px] truncate">
                               {(() => {
+                                if (isOur) return '';
                                 const meta = getTeamMetadata(tNum);
                                 return meta.city && meta.state ? `${meta.city}, ${meta.state}` : (meta.city || meta.state || '');
                               })()}
@@ -462,13 +513,16 @@ export const DashboardView: React.FC = () => {
                       <span className="w-2 h-2 rounded-full bg-blue-500" />
                       <span className="font-bold text-blue-400 tracking-wider">BLUE ALLIANCE</span>
                     </div>
-                    <span className="text-blue-300 font-bold">{blueAllianceEPA.toFixed(1)} EPA</span>
+                    <span className="text-blue-300 font-bold">{blueAllianceEPA.toFixed(1)} xP</span>
                   </div>
 
                   <div className="space-y-1.5">
                     {blueTeams.map((tNum, idx) => {
                       const isOur = tNum === teamInfo.number;
-                      const tEpa = epaData[tNum]?.totalEPA ?? 46.5;
+                      const matchTeam = epaData[tNum];
+                      const tEpa = (matchTeam && matchTeam.totalXP !== null && matchTeam.totalXP !== undefined)
+                        ? matchTeam.totalXP
+                        : (matchTeam?.totalEPA ?? 46.5);
                       const tName = isOur ? teamInfo.name : getTeamName(tNum);
                       return (
                         <div
@@ -495,12 +549,13 @@ export const DashboardView: React.FC = () => {
                               </span>
                             </div>
                             <span className={`${isOur ? 'text-blue-200 font-bold' : 'text-zinc-300'} text-xs shrink-0 font-mono`}>
-                              {tEpa.toFixed(1)} EPA
+                              {tEpa.toFixed(1)} xP
                             </span>
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-zinc-400">
                             <span className="text-zinc-400 text-[10px] truncate">
                               {(() => {
+                                if (isOur) return '';
                                 const meta = getTeamMetadata(tNum);
                                 return meta.city && meta.state ? `${meta.city}, ${meta.state}` : (meta.city || meta.state || '');
                               })()}
@@ -516,63 +571,71 @@ export const DashboardView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Statbotics Head-to-Head Prediction */}
+              {/* Match 13 Head-to-Head Prediction */}
               <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800 space-y-2 text-xs font-mono">
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-400 uppercase text-[10px] font-bold">
-                    Statbotics Match Prediction
+                    Match 13 Forecast
                   </span>
                   <span className="text-emerald-400 font-bold text-[11px]">
-                    Red Win Probability: 61%
+                    {redWinProb >= 50 ? `Red Win Probability: ${redWinProb}%` : `Blue Win Probability: ${blueWinProb}%`}
                   </span>
                 </div>
 
                 <div className="space-y-1">
                   <div className="h-3 w-full bg-zinc-800 rounded-full overflow-hidden flex">
-                    <div className="bg-red-600 h-full flex items-center justify-start px-2 text-[9px] font-black text-white" style={{ width: '61%' }}>
-                      Red 152
+                    <div
+                      className="bg-red-600 h-full flex items-center justify-start px-2 text-[9px] font-black text-white"
+                      style={{ width: `${redWinProb}%` }}
+                    >
+                      Red {currentForecast ? currentForecast.predictedRedScore : Math.round(redAllianceEPA)}
                     </div>
-                    <div className="bg-blue-600 h-full flex items-center justify-end px-2 text-[9px] font-black text-white" style={{ width: '39%' }}>
-                      147 Blue
+                    <div
+                      className="bg-blue-600 h-full flex items-center justify-end px-2 text-[9px] font-black text-white"
+                      style={{ width: `${blueWinProb}%` }}
+                    >
+                      {currentForecast ? currentForecast.predictedBlueScore : Math.round(blueAllianceEPA)} Blue
                     </div>
                   </div>
                   <div className="flex justify-between text-[10px] text-zinc-400">
-                    <span>Red 152.4 EPA</span>
-                    <span className="text-zinc-200 font-bold">+5.2 EPA Edge (Red Favor)</span>
-                    <span>Blue 147.2 EPA</span>
+                    <span>Red {redAllianceEPA.toFixed(1)} xP</span>
+                    <span className="text-zinc-200 font-bold">
+                      +{Math.abs(epaDiff).toFixed(1)} xP Edge ({epaDiff <= 0 ? 'Red Favor' : 'Blue Favor'})
+                    </span>
+                    <span>Blue {blueAllianceEPA.toFixed(1)} xP</span>
                   </div>
                 </div>
               </div>
 
-              {/* Statbotics Component EPA Comparison */}
+              {/* Match 13 Component xP Breakdown */}
               <div className="p-2.5 rounded-xl bg-black/40 border border-zinc-800/80 space-y-1.5 text-xs font-mono">
                 <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                  <span>Statbotics Component EPA Comparison</span>
+                  <span>Match 13 Component xP Breakdown</span>
                   <span className="text-zinc-500">Qual {matchInfo.nextMatchNumber || 13}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-1.5 text-[11px] text-center">
                   <div className="p-2 rounded bg-zinc-900/60 border border-zinc-800">
                     <span className="text-zinc-400 text-[10px] uppercase font-bold block mb-0.5">Autonomous</span>
                     <div className="flex justify-between items-center text-xs font-bold">
-                      <span className="text-red-400">42.2</span>
+                      <span className="text-red-400">{(redAllianceEPA * 0.3).toFixed(1)}</span>
                       <span className="text-zinc-600 text-[10px]">vs</span>
-                      <span className="text-blue-400">42.3</span>
+                      <span className="text-blue-400">{(blueAllianceEPA * 0.3).toFixed(1)}</span>
                     </div>
                   </div>
                   <div className="p-2 rounded bg-zinc-900/60 border border-zinc-800">
                     <span className="text-zinc-400 text-[10px] uppercase font-bold block mb-0.5">Teleop</span>
                     <div className="flex justify-between items-center text-xs font-bold">
-                      <span className="text-red-400">82.2</span>
+                      <span className="text-red-400">{(redAllianceEPA * 0.55).toFixed(1)}</span>
                       <span className="text-zinc-600 text-[10px]">vs</span>
-                      <span className="text-blue-400">78.9</span>
+                      <span className="text-blue-400">{(blueAllianceEPA * 0.55).toFixed(1)}</span>
                     </div>
                   </div>
                   <div className="p-2 rounded bg-zinc-900/60 border border-zinc-800">
                     <span className="text-zinc-400 text-[10px] uppercase font-bold block mb-0.5">Endgame</span>
                     <div className="flex justify-between items-center text-xs font-bold">
-                      <span className="text-red-400">28.0</span>
+                      <span className="text-red-400">{(redAllianceEPA * 0.15).toFixed(1)}</span>
                       <span className="text-zinc-600 text-[10px]">vs</span>
-                      <span className="text-blue-400">26.0</span>
+                      <span className="text-blue-400">{(blueAllianceEPA * 0.15).toFixed(1)}</span>
                     </div>
                   </div>
                 </div>
@@ -644,7 +707,6 @@ export const DashboardView: React.FC = () => {
                             </td>
                             <td className="py-1.5 px-3">
                               <div className="flex items-center gap-1.5">
-                                {isOurTeam && <CrLogo size={14} customUrl={customLogoUrl} />}
                                 <TeamBadge teamNumber={r.teamNumber} highlightActive={isOurTeam} />
                                 <span
                                   className={`text-xs font-semibold truncate max-w-[110px] sm:max-w-[150px] ${
@@ -788,16 +850,18 @@ export const DashboardView: React.FC = () => {
                   return (
                     <div
                       key={m.key}
-                      className={`p-2.5 rounded-xl border transition-all ${
+                      onClick={() => Actions.selectScheduleMatch(m.key)}
+                      title={`Click to open ${formatMatchLabel(m)} in Match Schedule`}
+                      className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
                         isCompleted
                           ? isWinner
-                            ? 'bg-emerald-950/15 border-emerald-800/40 hover:border-emerald-700/60'
-                            : 'bg-black/35 border-zinc-800/80 hover:border-zinc-700'
+                            ? 'bg-emerald-950/15 border-emerald-800/40 hover:border-emerald-500/80 hover:bg-emerald-950/25'
+                            : 'bg-black/35 border-zinc-800/80 hover:border-zinc-600 hover:bg-zinc-900/60'
                           : idx === 0
                           ? isRed
-                            ? 'bg-red-950/25 border-red-700/50 shadow-xs'
-                            : 'bg-blue-950/25 border-blue-700/50 shadow-xs'
-                          : 'bg-black/35 border-zinc-800/80 hover:border-zinc-700'
+                            ? 'bg-red-950/25 border-red-700/50 shadow-xs hover:border-red-500/80'
+                            : 'bg-blue-950/25 border-blue-700/50 shadow-xs hover:border-blue-500/80'
+                          : 'bg-black/35 border-zinc-800/80 hover:border-zinc-600 hover:bg-zinc-900/60'
                       }`}
                     >
                       {/* Match Row Top: Match badge, Station, Status/Time */}
@@ -913,10 +977,12 @@ export const DashboardView: React.FC = () => {
                   return (
                     <div
                       key={m.match?.key || m.number}
-                      className={`p-2.5 rounded-xl border font-mono text-xs ${
+                      onClick={() => m.match && Actions.selectScheduleMatch(m.match.key)}
+                      title={m.match ? `Click to open ${mLabel} in Match Schedule` : undefined}
+                      className={`p-2.5 rounded-xl border font-mono text-xs transition-all cursor-pointer ${
                         m.isOurTeam
-                          ? 'bg-amber-950/20 border-amber-500/50 shadow-xs'
-                          : 'bg-black/35 border-zinc-800/80'
+                          ? 'bg-amber-950/20 border-amber-500/50 shadow-xs hover:border-amber-400'
+                          : 'bg-black/35 border-zinc-800/80 hover:border-zinc-600 hover:bg-zinc-900/60'
                       }`}
                     >
                       <div className="flex items-center justify-between mb-2">
@@ -1028,17 +1094,21 @@ export const DashboardView: React.FC = () => {
                 <div className="p-2 rounded-xl bg-black/40 border border-zinc-800 flex items-center justify-between">
                   <div>
                     <div className="text-zinc-500 text-[9px] uppercase font-bold tracking-wider">On Field</div>
-                    <div className="text-white text-base font-black font-mono">Qual 12</div>
+                    <div className="text-white text-base font-black font-mono">
+                      {pulseMode === 'NO_MATCHES' ? 'Field Idle' : queue?.currentMatchNumber ? `Qual ${queue.currentMatchNumber}` : 'Qual 12'}
+                    </div>
                   </div>
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                  <div className={`w-2 h-2 rounded-full ${pulseMode === 'NO_MATCHES' ? 'bg-zinc-600' : 'bg-emerald-500 animate-pulse'}`} />
                 </div>
 
                 <div className="p-2 rounded-xl bg-black/40 border border-zinc-800 flex items-center justify-between">
                   <div>
                     <div className="text-amber-400/90 text-[9px] uppercase font-bold tracking-wider">Now Queuing</div>
-                    <div className="text-amber-300 text-base font-black font-mono">Qual 13</div>
+                    <div className="text-amber-300 text-base font-black font-mono">
+                      {pulseMode === 'NO_MATCHES' ? 'Complete' : queue?.nowQueuingMatchNumber ? `Qual ${queue.nowQueuingMatchNumber}` : 'Qual 13'}
+                    </div>
                   </div>
-                  <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <div className={`w-2 h-2 rounded-full ${pulseMode === 'NO_MATCHES' ? 'bg-zinc-600' : 'bg-amber-400 animate-pulse'}`} />
                 </div>
               </div>
 
@@ -1420,48 +1490,194 @@ export const DashboardView: React.FC = () => {
         </div>
       )}
 
-      {/* Modular Layout Bar */}
-      <ModularLayoutToolbar
-        viewName="Dashboard"
-        isCustomizing={isCustomizing}
-        onToggleCustomizing={() => setIsCustomizing(!isCustomizing)}
-        segments={segments}
-        onToggleVisibility={toggleSegmentVisibility}
-        onResetToDefault={resetToDefault}
-        onApplyPreset={applyPreset}
-        onAddSpacer={addSpacer}
-        onFillGrid={fillGrid}
-      />
-
-      {/* Grid with Dense Auto-Flow for Multidimensional Stacking */}
-      <div
-        className="grid grid-cols-12 gap-2 sm:gap-3 items-stretch"
-        style={{
-          gridAutoFlow: 'dense',
-          gridAutoRows: 'minmax(62px, auto)',
-        }}
-      >
-        {visibleSegments.map((seg) => (
-          <ModularSegment
-            key={seg.id}
-            id={seg.id}
-            title={seg.title}
-            colSpan={seg.colSpan}
-            heightMultiplier={seg.heightMultiplier}
-            collapsed={seg.collapsed}
-            isSpacer={seg.isSpacer}
-            isCustomizing={isCustomizing}
-            onReorder={reorderSegments}
-            onChangeColSpan={(span) => setSegmentColSpan(seg.id, span)}
-            onChangeHeightMultiplier={(m) => setSegmentHeightMultiplier(seg.id, m)}
-            onToggleCollapse={() => toggleSegmentCollapse(seg.id)}
-            onToggleVisibility={() => toggleSegmentVisibility(seg.id)}
-            onRemoveSpacer={() => removeSpacer(seg.id)}
+      {/* Layout Selection: Vertical Pit HUD (Portrait stack) vs Standard Modular Bento Grid */}
+      {isVerticalMode ? (
+        <div id="vertical-pit-hud" className="space-y-3 w-full max-w-2xl mx-auto pb-12 animate-fade-in">
+          {/* Top Sticky High-Contrast Arena Capsule */}
+          <div
+            className="sticky top-14 z-30 p-4 rounded-2xl border shadow-xl backdrop-blur-md flex items-center justify-between gap-4 transition-all"
+            style={{
+              backgroundColor: `${theme.tokens.secondary}fa`,
+              borderColor: theme.tokens.border,
+            }}
           >
-            {seg.isSpacer ? null : renderSegmentContent(seg.id)}
-          </ModularSegment>
-        ))}
-      </div>
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-10 h-10 rounded-xl flex items-center justify-center font-black font-mono text-sm border ${
+                  currentMatch?.redAlliance.teams.includes(teamInfo.number)
+                    ? 'bg-red-500/20 text-red-300 border-red-500/40'
+                    : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                }`}
+              >
+                {currentMatch?.redAlliance.teams.includes(teamInfo.number) ? 'RED' : 'BLUE'}
+              </div>
+              <div>
+                <div className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">
+                  {currentMatch ? formatMatchLabel(currentMatch) : 'Next Match'}
+                </div>
+                <div className="text-lg font-black text-white flex items-center gap-2">
+                  <span>Team {teamInfo.number}</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-mono bg-zinc-800 text-zinc-300 border border-zinc-700">
+                    Station {currentMatch?.redAlliance.teams.includes(teamInfo.number) ? 'Red' : 'Blue'}{' '}
+                    {(currentMatch?.redAlliance.teams.includes(teamInfo.number)
+                      ? currentMatch?.redAlliance.teams.indexOf(teamInfo.number)
+                      : currentMatch?.blueAlliance.teams.indexOf(teamInfo.number)) !== -1
+                      ? ((currentMatch?.redAlliance.teams.includes(teamInfo.number)
+                          ? currentMatch?.redAlliance.teams.indexOf(teamInfo.number)
+                          : currentMatch?.blueAlliance.teams.indexOf(teamInfo.number)) ?? 0) + 1
+                      : 1}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="text-right">
+              <div className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">
+                Arena Countdown
+              </div>
+              <div className="text-2xl font-black font-mono tabular-nums text-amber-400">
+                {isAllMatchesCompleted ? 'FINISHED' : formatCountdown(secondsUntilNextMatch)}
+              </div>
+              <div className="text-[10px] text-zinc-400">
+                {pulseStatus.phrase}
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Matchup & Alliance Breakdown */}
+          <div
+            className="p-4 rounded-2xl border space-y-3"
+            style={{
+              backgroundColor: theme.tokens.secondary,
+              borderColor: theme.tokens.border,
+            }}
+          >
+            <div className="flex items-center justify-between pb-2 border-b border-zinc-800 text-xs">
+              <span className="font-bold text-white uppercase tracking-wider font-mono">
+                Match 13 Alliance Breakdown & xP
+              </span>
+              <span className="font-mono text-zinc-400 text-[11px]">
+                Win Prob: Red {100 - blueWinProb}% • Blue {blueWinProb}%
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Red Alliance */}
+              <div className="p-3 rounded-xl bg-red-950/20 border border-red-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono font-bold text-red-400">
+                  <span>RED ALLIANCE</span>
+                  <span>{redAllianceEPA.toFixed(1)} xP</span>
+                </div>
+                <div className="space-y-1">
+                  {redTeams.map((t) => (
+                    <div key={t} className="flex items-center justify-between text-xs font-mono py-1 px-1.5 rounded bg-black/40">
+                      <span className={`font-bold ${t === teamInfo.number ? 'text-amber-400 font-black' : 'text-zinc-200'}`}>
+                        {t} {t === teamInfo.number && '★'}
+                      </span>
+                      <span className="text-zinc-400 text-[11px]">
+                        {(epaData[t]?.totalXP ?? epaData[t]?.totalEPA ?? 45.0).toFixed(1)} xP
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Blue Alliance */}
+              <div className="p-3 rounded-xl bg-blue-950/20 border border-blue-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono font-bold text-blue-400">
+                  <span>BLUE ALLIANCE</span>
+                  <span>{blueAllianceEPA.toFixed(1)} xP</span>
+                </div>
+                <div className="space-y-1">
+                  {blueTeams.map((t) => (
+                    <div key={t} className="flex items-center justify-between text-xs font-mono py-1 px-1.5 rounded bg-black/40">
+                      <span className={`font-bold ${t === teamInfo.number ? 'text-amber-400 font-black' : 'text-zinc-200'}`}>
+                        {t} {t === teamInfo.number && '★'}
+                      </span>
+                      <span className="text-zinc-400 text-[11px]">
+                        {(epaData[t]?.totalXP ?? epaData[t]?.totalEPA ?? 45.0).toFixed(1)} xP
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Full Segment Stack in Clean Vertical Flow */}
+          <div className="space-y-3">
+            {visibleSegments
+              .filter((s) => !s.isSpacer)
+              .map((seg) => (
+                <div
+                  key={seg.id}
+                  className="rounded-2xl border p-4 transition-all shadow-md overflow-hidden"
+                  style={{
+                    backgroundColor: theme.tokens.secondary,
+                    borderColor: theme.tokens.border,
+                  }}
+                >
+                  <div className="flex items-center justify-between pb-3 mb-3 border-b border-zinc-800/80">
+                    <h3 className="text-xs font-bold font-mono tracking-wider text-zinc-300 uppercase">
+                      {seg.title}
+                    </h3>
+                    <span className="text-[10px] font-mono text-zinc-500">
+                      Pit HUD Module
+                    </span>
+                  </div>
+                  <div className="w-full overflow-x-hidden">
+                    {renderSegmentContent(seg.id)}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Modular Layout Bar */}
+          <ModularLayoutToolbar
+            viewName="Dashboard"
+            isCustomizing={isCustomizing}
+            onToggleCustomizing={() => setIsCustomizing(!isCustomizing)}
+            segments={segments}
+            onToggleVisibility={toggleSegmentVisibility}
+            onResetToDefault={resetToDefault}
+            onApplyPreset={applyPreset}
+            onAddSpacer={addSpacer}
+            onFillGrid={fillGrid}
+          />
+
+          {/* Grid with Dense Auto-Flow for Multidimensional Stacking */}
+          <div
+            className="grid grid-cols-12 gap-2 sm:gap-3 items-stretch"
+            style={{
+              gridAutoFlow: 'dense',
+              gridAutoRows: 'minmax(62px, auto)',
+            }}
+          >
+            {visibleSegments.map((seg) => (
+              <ModularSegment
+                key={seg.id}
+                id={seg.id}
+                title={seg.title}
+                colSpan={seg.colSpan}
+                heightMultiplier={seg.heightMultiplier}
+                collapsed={seg.collapsed}
+                isSpacer={seg.isSpacer}
+                isCustomizing={isCustomizing}
+                onReorder={reorderSegments}
+                onChangeColSpan={(span) => setSegmentColSpan(seg.id, span)}
+                onChangeHeightMultiplier={(m) => setSegmentHeightMultiplier(seg.id, m)}
+                onToggleCollapse={() => toggleSegmentCollapse(seg.id)}
+                onToggleVisibility={() => toggleSegmentVisibility(seg.id)}
+                onRemoveSpacer={() => removeSpacer(seg.id)}
+              >
+                {seg.isSpacer ? null : renderSegmentContent(seg.id)}
+              </ModularSegment>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 };

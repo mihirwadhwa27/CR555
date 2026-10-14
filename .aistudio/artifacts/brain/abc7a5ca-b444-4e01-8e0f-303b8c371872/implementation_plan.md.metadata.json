@@ -1,0 +1,6 @@
+{
+  "summary": "Complete implementation plan to replace the Statbotics service with the Match 13 API system (https://www.match13.com/docs/api). Encompasses server proxy endpoints, UI settings for API key configuration, telemetry and health monitoring replacement, xP rating cards, match forecast integration, and team origin refinements.",
+  "updatedAt": "2026-10-12T15:47:59.061059256Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

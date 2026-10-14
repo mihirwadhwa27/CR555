@@ -15,10 +15,14 @@ import {
   SlidersHorizontal,
   Sparkles,
   Tv,
+  Smartphone,
+  RefreshCw,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
 import { NavigationTab } from '../types';
 import { CrLogo } from './CrLogo';
+import { LiveActivityPill } from './apple';
+import { formatTimeAgo } from '../utils/matchUtils';
 
 interface NavItem {
   id: NavigationTab;
@@ -44,6 +48,9 @@ export const TopNav: React.FC = () => {
   const demoMode = usePitState(Selectors.demoMode);
   const customLogoUrl = usePitState(Selectors.customLogoUrl);
   const isDrivenScreen = usePitState(Selectors.isDrivenScreen);
+  const isVerticalMode = usePitState(Selectors.isVerticalMode);
+  const lastSyncedAt = usePitState(Selectors.lastSyncedAt);
+  const dataFreshness = usePitState(Selectors.dataFreshness);
 
   // Live Competition / Arena Clock (with Demo Mode simulation support)
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -151,8 +158,13 @@ export const TopNav: React.FC = () => {
             </nav>
           </div>
 
-          {/* Right Action Controls: Live Clock, Demo Pill, Setup, Team Selector & Discreet Icons */}
+          {/* Right Action Controls: Live Activity Pill, Clock, Driven Screen, Setup & Team */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Apple Dynamic Island / Live Activity Arena Status Pill */}
+            <div className="flex items-center px-0.5 shrink-0">
+              <LiveActivityPill />
+            </div>
+
             {/* Live Arena / Pit Clock */}
             <div
               onClick={() => setUse24Hour(!use24Hour)}
@@ -213,6 +225,30 @@ export const TopNav: React.FC = () => {
               </span>
             </button>
 
+            {/* Dedicated Vertical HUD Toggle for Pit Displays */}
+            <button
+              id="vertical-hud-toggle-btn"
+              onClick={() => Actions.toggleVerticalMode()}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all cursor-pointer shadow-xs ${
+                isVerticalMode
+                  ? 'border-amber-500/60 bg-amber-500/20 text-amber-200 hover:bg-amber-500/30 ring-1 ring-amber-500/40'
+                  : 'border-zinc-800 bg-zinc-900/90 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200'
+              }`}
+              title={
+                isVerticalMode
+                  ? 'Vertical Pit HUD: ACTIVE (9:16 portrait layout optimized for tall vertical monitor mounts). Click to switch to wide display.'
+                  : 'Switch to Vertical Pit HUD • Optimized single-column glanceable stack for 9:16 vertical pit truss displays.'
+              }
+            >
+              <Smartphone size={13} className={isVerticalMode ? 'text-amber-400 animate-pulse shrink-0' : 'text-zinc-400 shrink-0'} />
+              <span className="hidden sm:inline font-mono">
+                {isVerticalMode ? 'Vertical HUD: ON' : 'Vertical HUD'}
+              </span>
+              <span className="sm:hidden font-mono text-[10px]">
+                {isVerticalMode ? 'HUD ON' : 'Vertical'}
+              </span>
+            </button>
+
             {/* Pulse Setup Wizard Button */}
             <button
               id="pulse-setup-trigger-btn"
@@ -224,20 +260,15 @@ export const TopNav: React.FC = () => {
               <span className="font-medium">Setup</span>
             </button>
 
-            {/* Pill: Active Team & Location */}
+            {/* Pill: Active Team */}
             <button
               onClick={() => Actions.setSetupModalOpen(true)}
               className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1 rounded-full text-xs font-semibold border border-zinc-800 bg-black/50 text-zinc-200 hover:border-zinc-700 hover:text-white transition-colors cursor-pointer shadow-xs group"
-              title={`Team ${teamInfo.number}: ${teamInfo.name} (${teamInfo.location || 'USA'}) - Click to change in Setup`}
+              title={`Team ${teamInfo.number}: ${teamInfo.name} - Click to change in Setup`}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 group-hover:scale-125 transition-transform shrink-0" />
               <span className="font-mono font-bold text-amber-400">{teamInfo.number}</span>
               <span className="text-zinc-200 font-medium max-w-[110px] sm:max-w-[160px] truncate">{teamInfo.name}</span>
-              {teamInfo.location && (
-                <span className="hidden md:inline text-[10px] text-zinc-400 font-sans pl-1.5 border-l border-zinc-800 shrink-0">
-                  {teamInfo.location}
-                </span>
-              )}
             </button>
 
             {/* Small Subtle Icons: Theme & Settings */}
@@ -285,19 +316,26 @@ export const TopNav: React.FC = () => {
             </div>
 
             <p className="text-xs text-zinc-400">
-              Change the active pit display team to highlight matches and calculate Statbotics EPAs.
+              Change the active pit display team to highlight matches and calculate Match 13 xP ratings.
             </p>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {[
-                { number: 1002, name: 'CircuitRunners Robotics' },
-                { number: 2910, name: 'Jack in the Bot' },
-                { number: 1678, name: 'Citrus Circuits' },
-                { number: 254, name: 'The Cheesy Poofs' },
+                { number: 1002, name: 'CircuitRunners Robotics', eventKey: '2026gadal' },
+                { number: 118, name: 'Robonauts', eventKey: '2026joh' },
+                { number: 9483, name: 'Istanbul Wildcats', eventKey: '2026tuis' },
+                { number: 2046, name: 'Bear Metal', eventKey: '2026wabon' },
+                { number: 973, name: 'Greybots', eventKey: '2026cacv' },
               ].map((t) => (
                 <button
                   key={t.number}
-                  onClick={() => handleApplyTeam(t.number.toString())}
+                  onClick={() => {
+                    if (demoMode?.enabled) {
+                      Actions.disableDemoMode();
+                    }
+                    handleApplyTeam(t.number.toString());
+                    Actions.selectEvent(t.eventKey);
+                  }}
                   className={`p-2.5 rounded-xl border text-xs text-left transition-colors cursor-pointer ${
                     teamInfo.number === t.number
                       ? 'bg-zinc-900 border-zinc-600 text-white font-bold'

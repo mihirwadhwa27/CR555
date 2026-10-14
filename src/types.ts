@@ -51,6 +51,23 @@ export const DEFAULT_THEME_TOKENS: ThemeTokens = {
 
 export const THEME_PRESETS: ThemePreset[] = [
   {
+    id: 'apple-cupertino-dark',
+    name: 'Apple HIG: Cupertino Glass',
+    description: 'Authentic Apple Human Interface Guidelines dark vibrancy, ultra-thin materials, SF Pro System typography, and iOS system blue accents',
+    font: 'System',
+    tokens: {
+      background: '#000000',
+      secondary: '#1c1c1e',
+      foreground: '#f5f5f7',
+      mutedForeground: '#86868b',
+      accent: '#0a84ff',
+      accentForeground: '#ffffff',
+      border: '#38383a',
+      secondaryBorder: '#2c2c2e',
+      destructive: '#ff453a',
+    },
+  },
+  {
     id: 'circuitrunners-green',
     name: 'Team 1002: CircuitRunners',
     description: 'Official CircuitRunners green (#1fd655), deep dark OLED background, and circuit accents',
@@ -217,6 +234,10 @@ export interface TeamEPAModel {
   autoEPA: number | null;
   teleopEPA: number | null;
   endgameEPA: number | null;
+  totalXP?: number | null;
+  autoXP?: number | null;
+  teleopXP?: number | null;
+  endgameXP?: number | null;
   unitlessEPA?: number | null;
   normEPA?: number | null;
   rank?: number;
@@ -234,6 +255,46 @@ export interface TeamEPAModel {
   ties?: number;
   lastUpdated?: string | number;
   seasonYear?: number;
+}
+
+export interface Match13TeamRating {
+  teamNumber: number;
+  teamName?: string;
+  totalXP: number | null;
+  autoXP: number | null;
+  teleopXP: number | null;
+  endgameXP: number | null;
+  totalEPA?: number | null; // Compatibility alias
+  autoEPA?: number | null;
+  teleopEPA?: number | null;
+  endgameEPA?: number | null;
+  rank?: number;
+  eventRank?: number;
+  eventPercentile?: number;
+  districtRank?: number;
+  worldRank?: number;
+  worldPercentile?: number;
+  percentile?: number;
+  winRate?: number;
+  wins?: number;
+  losses?: number;
+  ties?: number;
+  ratingChange?: number;
+  meanXP?: number;
+  maxXP?: number;
+  seasonYear?: number;
+  lastUpdated?: string | number;
+}
+
+export interface Match13MatchForecast {
+  matchKey: string;
+  redWinProbability: number; // 0.0 to 1.0
+  blueWinProbability: number;
+  predictedRedScore: number;
+  predictedBlueScore: number;
+  predictedRedXP: number;
+  predictedBlueXP: number;
+  confidence?: 'HIGH' | 'MEDIUM' | 'LOW';
 }
 
 export interface ManualBreakModel {
@@ -369,7 +430,7 @@ export interface PitAlertModel {
 export interface TelemetryLogEntry {
   id: string;
   timestamp: number;
-  service: 'TBA' | 'NEXUS' | 'STATBOTICS' | 'SYSTEM';
+  service: 'TBA' | 'NEXUS' | 'MATCH13' | 'STATBOTICS' | 'SYSTEM';
   status: 'SUCCESS' | 'WARNING' | 'ERROR';
   message: string;
   latencyMs?: number;
@@ -427,6 +488,7 @@ export interface ApplicationState {
     tbaApiKey: string;
     nexusApiKey: string;
     nexusWebhookToken?: string;
+    match13ApiKey?: string;
     corsProxyUrl: string;
     nexusManualEventKey: string;
     theme: ThemeConfig;
@@ -438,6 +500,7 @@ export interface ApplicationState {
       simulatedTimeOffset: number;
       eventKey: string;
       teamNumber: number;
+      stepIndex?: number;
     };
   };
 
@@ -450,6 +513,8 @@ export interface ApplicationState {
     announcements: AnnouncementModel[];
     partsRequests: PartsRequestModel[];
     epa: Record<number, TeamEPAModel>;
+    ratings?: Record<number, Match13TeamRating>;
+    forecasts?: Record<string, Match13MatchForecast>;
     streams: StreamModel[];
   };
 
@@ -477,7 +542,8 @@ export interface ApplicationState {
   telemetry: {
     tba: ServiceHealth;
     nexus: ServiceHealth;
-    statbotics: ServiceHealth;
+    match13: ServiceHealth;
+    statbotics?: ServiceHealth;
   };
 
   videoReplay: VideoReplayState;
@@ -487,10 +553,16 @@ export interface ApplicationState {
     activeTab: NavigationTab;
     remoteTargetTab: NavigationTab;
     isDrivenScreen: boolean;
+    countdownSeconds: number;
+    selectedScheduleMatchKey: string | null;
     isSetupModalOpen: boolean;
+    isArchitectureModalOpen?: boolean;
     isThemeModalOpen: boolean;
     isStrategyModalOpen: boolean;
     isStrategyUnlocked: boolean;
+    isVerticalMode?: boolean;
+    lastSyncedAt?: number;
+    dataFreshness?: 'live' | 'cached' | 'offline';
     replayMode: {
       isActive: boolean;
       matchKey: string | null;

@@ -13,7 +13,7 @@
  * - Modular segment layout supporting custom column spans, height multipliers, collapsing, and reordering
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Calendar,
   ExternalLink,
@@ -43,6 +43,7 @@ import { useModularLayout, SegmentConfig } from '../hooks/useModularLayout';
 import { ModularSegment } from '../components/ModularSegment';
 import { ModularLayoutToolbar } from '../components/ModularLayoutToolbar';
 import { TeamBadge } from '../components/TeamBadge';
+import { AppleSegmentedControl } from '../components/apple';
 import { formatMatchLabel, getCompLevelBadgeClasses, sortTournamentMatches } from '../utils/matchUtils';
 import { getTeamName, getTeamMetadata } from '../utils/teamLookup';
 
@@ -88,6 +89,10 @@ export const ScheduleView: React.FC = () => {
   const fullSchedule = usePitState((s) => s.activeEvent.schedule);
   const allRankings = usePitState((s) => s.activeEvent.rankings);
   const videoReplay = usePitState(Selectors.videoReplay);
+  const selectedScheduleMatchKey = usePitState(Selectors.selectedScheduleMatchKey);
+  const pulseMode = usePitState(Selectors.pulseSimulatorState);
+  const countdownSeconds = usePitState(Selectors.countdownSeconds);
+  const queue = usePitState(Selectors.queue);
   const teamRanking = allRankings.find((r) => r.teamNumber === teamInfo.number);
 
   const [scheduleScope, setScheduleScope] = useState<'TEAM_ONLY' | 'ALL' | 'VIDEOS_ONLY'>('TEAM_ONLY');
@@ -96,7 +101,33 @@ export const ScheduleView: React.FC = () => {
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const [videoTimestampOffset, setVideoTimestampOffset] = useState<number>(0);
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(videoReplay.playbackRate || 1.0);
+  const replayIframeRef = useRef<HTMLIFrameElement>(null);
+
+  const sendReplayMessage = useCallback((func: string, args: any[] = []) => {
+    try {
+      replayIframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func, args }),
+        '*'
+      );
+    } catch (e) {
+      console.warn('Iframe postMessage error:', e);
+    }
+  }, []);
+
+  const handleSetSpeed = (rate: number) => {
+    setPlaybackSpeed(rate);
+    Actions.sendVideoCommand('rate', rate);
+    sendReplayMessage('setPlaybackRate', [rate]);
+  };
+
+  // Synchronize remote controller speed command or store updates
+  useEffect(() => {
+    if (videoReplay.playbackRate && videoReplay.playbackRate !== playbackSpeed) {
+      setPlaybackSpeed(videoReplay.playbackRate);
+      sendReplayMessage('setPlaybackRate', [videoReplay.playbackRate]);
+    }
+  }, [videoReplay.playbackRate, videoReplay.commandNonce, playbackSpeed, sendReplayMessage]);
 
   const {
     segments,
@@ -133,6 +164,38 @@ export const ScheduleView: React.FC = () => {
     );
   }, [matches, teamInfo.number]);
 
+  // Sync selected match from store and auto-scroll
+  useEffect(() => {
+    if (selectedScheduleMatchKey) {
+      const targetMatch = matches.find(
+        (m) =>
+          m.key === selectedScheduleMatchKey ||
+          (selectedScheduleMatchKey.includes('_') && m.key.endsWith(`_${selectedScheduleMatchKey.split('_').slice(1).join('_')}`)) ||
+          (m.matchNumber !== undefined && (selectedScheduleMatchKey.endsWith(`qm${m.matchNumber}`) || selectedScheduleMatchKey.endsWith(`_${m.matchNumber}`)))
+      );
+      if (targetMatch) {
+        if (searchQuery) setSearchQuery('');
+        const isTeamMatch =
+          targetMatch.redAlliance.teams.includes(teamInfo.number) ||
+          targetMatch.blueAlliance.teams.includes(teamInfo.number);
+        const hasVideo = targetMatch.videos && targetMatch.videos.length > 0;
+
+        if (scheduleScope === 'VIDEOS_ONLY' && !hasVideo) {
+          setScheduleScope(isTeamMatch ? 'TEAM_ONLY' : 'ALL');
+        } else if (scheduleScope === 'TEAM_ONLY' && !isTeamMatch) {
+          setScheduleScope('ALL');
+        }
+
+        setTimeout(() => {
+          const el = document.getElementById(`match-row-${targetMatch.key}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 180);
+      }
+    }
+  }, [selectedScheduleMatchKey, matches, teamInfo.number]);
+
   const completedWithVideos = useMemo(() => {
     return matches.filter((m) => m.videos && m.videos.length > 0);
   }, [matches]);
@@ -156,13 +219,31 @@ export const ScheduleView: React.FC = () => {
 
   // Current active match object for the video replay player
   const currentVideoMatch = useMemo(() => {
+    if (selectedScheduleMatchKey) {
+      const match = matches.find(
+        (m) =>
+          m.key === selectedScheduleMatchKey ||
+          (selectedScheduleMatchKey.includes('_') && m.key.endsWith(`_${selectedScheduleMatchKey.split('_').slice(1).join('_')}`)) ||
+          (m.matchNumber !== undefined && (selectedScheduleMatchKey.endsWith(`qm${m.matchNumber}`) || selectedScheduleMatchKey.endsWith(`_${m.matchNumber}`)))
+      );
+      if (match) return match;
+    }
+    if (videoReplay.activeMatchKey) {
+      const match = matches.find(
+        (m) =>
+          m.key === videoReplay.activeMatchKey ||
+          (videoReplay.activeMatchKey.includes('_') && m.key.endsWith(`_${videoReplay.activeMatchKey.split('_').slice(1).join('_')}`)) ||
+          (m.matchNumber !== undefined && (videoReplay.activeMatchKey.endsWith(`qm${m.matchNumber}`) || videoReplay.activeMatchKey.endsWith(`_${m.matchNumber}`)))
+      );
+      if (match) return match;
+    }
     return (
-      matches.find((m) => m.key === videoReplay.activeMatchKey) ||
+      teamMatches.find((m) => m.status !== 'COMPLETED') ||
       completedWithVideos.find((m) => m.redAlliance.teams.includes(teamInfo.number) || m.blueAlliance.teams.includes(teamInfo.number)) ||
       completedWithVideos[0] ||
       matches[0]
     );
-  }, [matches, videoReplay.activeMatchKey, completedWithVideos, teamInfo.number]);
+  }, [matches, selectedScheduleMatchKey, videoReplay.activeMatchKey, teamMatches, completedWithVideos, teamInfo.number]);
 
   const handleSelectReplayMatch = (m: MatchModel, jumpTime: number = 0) => {
     setVideoTimestampOffset(jumpTime);
@@ -176,6 +257,13 @@ export const ScheduleView: React.FC = () => {
       videoKey,
       `${formatMatchLabel(m)} • Team ${teamInfo.number} ${scoreStr}`
     );
+  };
+
+  const handleSelectRow = (m: MatchModel) => {
+    Actions.selectScheduleMatch(m.key);
+    if (m.videos && m.videos.length > 0) {
+      handleSelectReplayMatch(m);
+    }
   };
 
   const handleJumpPhase = (seconds: number) => {
@@ -250,39 +338,60 @@ export const ScheduleView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Match Score Strip */}
-              {currentVideoMatch && currentVideoMatch.redAlliance.score !== null && currentVideoMatch.blueAlliance.score !== null && (
-                <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-black/60 border border-zinc-800">
-                  <div className={`flex items-center gap-1 font-bold ${redWon ? 'text-red-400' : 'text-zinc-300'}`}>
-                    <span className="text-[10px] text-zinc-500 uppercase">Red</span>
-                    <span className="text-sm">{currentVideoMatch.redAlliance.score}</span>
+              {/* Match Score Strip & YouTube Link */}
+              <div className="flex items-center gap-2 flex-wrap">
+                {activeVideoKey && (
+                  <a
+                    href={`https://www.youtube.com/watch?v=${activeVideoKey}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/40 text-[11px] font-bold transition-colors cursor-pointer"
+                    title="Watch match replay directly on YouTube"
+                  >
+                    <Youtube size={12} className="text-red-400" />
+                    <span>Watch on YouTube</span>
+                    <ExternalLink size={10} className="text-red-400" />
+                  </a>
+                )}
+                {currentVideoMatch && currentVideoMatch.redAlliance.score !== null && currentVideoMatch.blueAlliance.score !== null && (
+                  <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-black/60 border border-zinc-800">
+                    <div className={`flex items-center gap-1 font-bold ${redWon ? 'text-red-400' : 'text-zinc-300'}`}>
+                      <span className="text-[10px] text-zinc-500 uppercase">Red</span>
+                      <span className="text-sm">{currentVideoMatch.redAlliance.score}</span>
+                    </div>
+                    <span className="text-zinc-600 font-bold">-</span>
+                    <div className={`flex items-center gap-1 font-bold ${blueWon ? 'text-blue-400' : 'text-zinc-300'}`}>
+                      <span className="text-sm">{currentVideoMatch.blueAlliance.score}</span>
+                      <span className="text-[10px] text-zinc-500 uppercase">Blue</span>
+                    </div>
+                    {isCurrentMatchTeam && (
+                      <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-black ${
+                        (isRed && redWon) || (isBlue && blueWon)
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                          : isTie
+                          ? 'bg-zinc-700 text-zinc-300'
+                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      }`}>
+                        {(isRed && redWon) || (isBlue && blueWon) ? 'VICTORY' : isTie ? 'TIE' : 'DEFEAT'}
+                      </span>
+                    )}
                   </div>
-                  <span className="text-zinc-600 font-bold">-</span>
-                  <div className={`flex items-center gap-1 font-bold ${blueWon ? 'text-blue-400' : 'text-zinc-300'}`}>
-                    <span className="text-sm">{currentVideoMatch.blueAlliance.score}</span>
-                    <span className="text-[10px] text-zinc-500 uppercase">Blue</span>
-                  </div>
-                  {isCurrentMatchTeam && (
-                    <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-black ${
-                      (isRed && redWon) || (isBlue && blueWon)
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : isTie
-                        ? 'bg-zinc-700 text-zinc-300'
-                        : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
-                    }`}>
-                      {(isRed && redWon) || (isBlue && blueWon) ? 'VICTORY' : isTie ? 'TIE' : 'DEFEAT'}
-                    </span>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* Video Iframe Viewport */}
             <div className="relative w-full flex-1 min-h-[220px] max-h-[420px] bg-black rounded-xl overflow-hidden my-2.5 border border-zinc-800 shadow-inner flex items-center justify-center">
               {activeVideoKey ? (
                 <iframe
+                  ref={replayIframeRef}
                   key={`${activeVideoKey}-${videoTimestampOffset}`}
-                  src={`https://www.youtube.com/embed/${activeVideoKey}?autoplay=1&start=${videoTimestampOffset}&rel=0&enablejsapi=1`}
+                  onLoad={() => {
+                    if (playbackSpeed !== 1.0) {
+                      sendReplayMessage('setPlaybackRate', [playbackSpeed]);
+                    }
+                  }}
+                  src={`https://www.youtube.com/embed/${activeVideoKey}?autoplay=1&start=${videoTimestampOffset}&rel=0&enablejsapi=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`}
                   title={currentVideoMatch ? formatMatchLabel(currentVideoMatch) : 'Match Replay'}
                   className="w-full h-full absolute inset-0 border-0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -322,7 +431,7 @@ export const ScheduleView: React.FC = () => {
             </div>
 
             {/* Replay Scrubbing & Phase Control Toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800 shrink-0">
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-zinc-800 shrink-0">
               {/* Match Phase Jump Buttons */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-zinc-500 text-[10px] uppercase font-bold mr-1 hidden sm:inline">Jump:</span>
@@ -362,6 +471,25 @@ export const ScheduleView: React.FC = () => {
                   <FastForward size={11} />
                   <span>Endgame (2:00)</span>
                 </button>
+              </div>
+
+              {/* Playback Analysis Speed Controls */}
+              <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap">
+                <span className="text-zinc-500 text-[10px] uppercase font-bold mr-0.5">Speed:</span>
+                {[0.25, 0.5, 1.0, 1.5, 2.0].map((rate) => (
+                  <button
+                    key={rate}
+                    onClick={() => handleSetSpeed(rate)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                      playbackSpeed === rate
+                        ? 'bg-emerald-500 text-black shadow-xs font-black'
+                        : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
+                    }`}
+                    title={`Set video replay analysis speed to ${rate}x`}
+                  >
+                    {rate}x
+                  </button>
+                ))}
               </div>
 
               {/* YouTube Link & Refresh */}
@@ -492,40 +620,31 @@ export const ScheduleView: React.FC = () => {
           >
             {/* Header Toolbar: Scope Selector & Search Filter */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-zinc-800 shrink-0">
-              {/* Scope Switcher */}
-              <div className="flex items-center gap-1 p-1 rounded-xl bg-black/50 border border-zinc-800 overflow-x-auto no-scrollbar">
-                <button
-                  onClick={() => setScheduleScope('TEAM_ONLY')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    scheduleScope === 'TEAM_ONLY'
-                      ? 'bg-amber-400 text-black shadow-xs'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  Team {teamInfo.number} ({teamMatches.length})
-                </button>
-                <button
-                  onClick={() => setScheduleScope('ALL')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                    scheduleScope === 'ALL'
-                      ? 'bg-zinc-700 text-white shadow-xs'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  All Matches ({matches.length})
-                </button>
-                <button
-                  onClick={() => setScheduleScope('VIDEOS_ONLY')}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
-                    scheduleScope === 'VIDEOS_ONLY'
-                      ? 'bg-red-600 text-white shadow-xs'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <Film size={11} />
-                  <span>With Replays ({completedWithVideos.length})</span>
-                </button>
-              </div>
+              {/* Apple Sliding Segmented Control Scope Switcher */}
+              <AppleSegmentedControl<'TEAM_ONLY' | 'ALL' | 'VIDEOS_ONLY'>
+                value={scheduleScope}
+                onChange={setScheduleScope}
+                size="sm"
+                options={[
+                  {
+                    id: 'TEAM_ONLY',
+                    label: `Team ${teamInfo.number}`,
+                    badge: teamMatches.length,
+                  },
+                  {
+                    id: 'ALL',
+                    label: 'All Matches',
+                    badge: matches.length,
+                  },
+                  {
+                    id: 'VIDEOS_ONLY',
+                    label: 'Replays',
+                    icon: <Film size={11} />,
+                    badge: completedWithVideos.length,
+                    badgeColor: 'bg-rose-500/20 text-rose-300',
+                  },
+                ]}
+              />
 
               {/* Search Filter */}
               <div className="relative w-full sm:w-64">
@@ -599,12 +718,14 @@ export const ScheduleView: React.FC = () => {
                     return (
                       <tr
                         key={m.key || `m-${m.matchNumber}-${m.compLevel}`}
-                        className={`hover:bg-zinc-800/40 transition-colors ${
+                        id={`match-row-${m.key}`}
+                        onClick={() => handleSelectRow(m)}
+                        className={`cursor-pointer transition-colors ${
                           isSelectedInPlayer
-                            ? 'bg-amber-400/15'
+                            ? 'bg-amber-400/25 ring-1 ring-inset ring-amber-400/60'
                             : isOurMatch
-                            ? 'bg-amber-400/5'
-                            : ''
+                            ? 'bg-amber-400/5 hover:bg-amber-400/15'
+                            : 'hover:bg-zinc-800/40'
                         }`}
                       >
                         {/* Match Label */}
@@ -686,7 +807,10 @@ export const ScheduleView: React.FC = () => {
                         <td className="py-1.5 px-2 text-center whitespace-nowrap">
                           {hasVideo ? (
                             <button
-                              onClick={() => handleSelectReplayMatch(m)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectReplayMatch(m);
+                              }}
                               className={`px-2 py-1 rounded-md text-[10px] font-bold flex items-center justify-center gap-1 mx-auto transition-all cursor-pointer ${
                                 isSelectedInPlayer
                                   ? 'bg-amber-400 text-black shadow-xs'
@@ -739,6 +863,39 @@ export const ScheduleView: React.FC = () => {
                 </div>
                 <div className="text-zinc-400 text-xs truncate">
                   {activeEvent.name || 'Tournament Schedule'}
+                </div>
+              </div>
+
+              {/* Live Arena Pulse Queue Status Strip */}
+              <div className="p-2.5 rounded-xl bg-black/60 border border-zinc-800 space-y-1.5 font-mono">
+                <div className="flex items-center justify-between text-[10px]">
+                  <span className="text-zinc-400 uppercase font-bold flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${
+                      pulseMode === 'NO_MATCHES' ? 'bg-emerald-400' :
+                      pulseMode === 'NOW_QUEUING' ? 'bg-amber-400 animate-pulse' :
+                      pulseMode === 'ON_DECK' ? 'bg-orange-500 animate-pulse' :
+                      'bg-blue-400'
+                    }`} />
+                    Arena Queue Status
+                  </span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-black ${
+                    pulseMode === 'NO_MATCHES' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+                    pulseMode === 'NOW_QUEUING' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' :
+                    pulseMode === 'ON_DECK' ? 'bg-orange-500/20 text-orange-300 border border-orange-500/30' :
+                    'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                  }`}>
+                    {pulseMode === 'NO_MATCHES' ? 'ALL COMPLETED' :
+                     pulseMode === 'NOW_QUEUING' ? 'NOW QUEUING' :
+                     pulseMode === 'ON_DECK' ? 'ON DECK' :
+                     pulseMode === 'QUEUE_5MIN' ? 'QUEUE IN 5 MIN' :
+                     'ON SCHEDULE'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs text-zinc-300">
+                  <span className="text-zinc-400 text-[11px] truncate max-w-[170px]">{queue?.statusText || 'Arena queuing on schedule'}</span>
+                  <span className="text-amber-400 font-bold tabular-nums">
+                    {pulseMode === 'NO_MATCHES' ? 'Final' : `${Math.floor(countdownSeconds / 60)}m ${countdownSeconds % 60 < 10 ? '0' : ''}${countdownSeconds % 60}s`}
+                  </span>
                 </div>
               </div>
 

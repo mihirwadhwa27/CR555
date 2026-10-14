@@ -163,13 +163,24 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
 
-        <button
-          onClick={() => Actions.setSetupModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs transition-colors cursor-pointer"
-        >
-          <SlidersHorizontal size={14} />
-          <span>Launch Setup Wizard</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => Actions.setArchitectureModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-bold text-xs transition-colors cursor-pointer"
+            title="View complete system architecture and code map"
+          >
+            <Layers size={14} className="text-amber-400" />
+            <span>Architecture & Code Map</span>
+          </button>
+
+          <button
+            onClick={() => Actions.setSetupModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs transition-colors cursor-pointer"
+          >
+            <SlidersHorizontal size={14} />
+            <span>Launch Setup Wizard</span>
+          </button>
+        </div>
       </div>
 
       {/* CR555 Team Branding & Custom Logo Management */}
@@ -290,11 +301,11 @@ export const SettingsView: React.FC = () => {
                 </li>
                 <li className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  <span><strong>Next Match Scouting:</strong> Beside match header & Team 1002 badge</span>
+                  <span><strong>Next Match Scouting:</strong> Beside match header & Team badge</span>
                 </li>
                 <li className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                  <span><strong>Division Rankings:</strong> Next to Team 1002 row in rankings table</span>
+                  <span><strong>Strategy & Scouting:</strong> Strategy guard confirmation</span>
                 </li>
                 <li className="flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />

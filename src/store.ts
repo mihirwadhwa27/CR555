@@ -16,10 +16,15 @@ import {
   ServiceStatus,
   DEFAULT_THEME_TOKENS,
   THEME_PRESETS,
+  TeamEPAModel,
+  Match13TeamRating,
+  Match13MatchForecast,
 } from './types';
-import { STORAGE_KEYS, StorageService, ThemeService, CacheManager, SAMPLE_1002_MATCHES, SAMPLE_1002_RANKINGS, SAMPLE_EPA_DATA, TbaService, StatboticsService, DisplayBroadcastService, NexusService } from './services';
+import { STORAGE_KEYS, StorageService, ThemeService, CacheManager, SAMPLE_1002_MATCHES, SAMPLE_1002_RANKINGS, SAMPLE_EPA_DATA, SAMPLE_MATCH13_RATINGS, TbaService, Match13Service, StatboticsService, DisplayBroadcastService, NexusService, DEFAULT_MATCH13_API_KEY } from './services';
 import { MatchModel, VideoReplayState, TelemetryLogEntry, ToolRecordModel } from './types';
 import { getTeamMetadata } from './utils/teamLookup';
+import { formatMatchLabel } from './utils/matchUtils';
+import { QualityControlService } from './services/qualityControl';
 
 // ==========================================
 // 1. INITIAL STATE FACTORY
@@ -49,6 +54,7 @@ export function createInitialState(): ApplicationState {
     tbaApiKey: 'Team1002-PitFUSION-PublicPreviewKey-2026',
     nexusApiKey: 'iOk-xjD_qisD2C0T59YuTa1_F3E',
     nexusWebhookToken: '',
+    match13ApiKey: StorageService.get(STORAGE_KEYS.MATCH13_API_KEY, '') || DEFAULT_MATCH13_API_KEY,
     corsProxyUrl: '',
     nexusManualEventKey: '',
     theme: defaultTheme,
@@ -128,8 +134,8 @@ export function createInitialState(): ApplicationState {
         shortName: 'PCH District Championship',
         city: 'Macon',
         stateProv: 'GA',
-        startDate: '2026-04-01',
-        endDate: '2026-04-04',
+        startDate: '2026-04-08',
+        endDate: '2026-04-11',
         year: 2026,
         category: 'CURRENT',
         timezone: 'America/New_York',
@@ -163,6 +169,8 @@ export function createInitialState(): ApplicationState {
         { id: 'pr-3', partName: '775pro Motor (Lent to Team 2974)', teamNumber: 2974, urgency: 'LOW', status: 'FULFILLED', requestedAt: Date.now() - 1000 * 60 * 60 },
       ],
       epa: SAMPLE_EPA_DATA,
+      ratings: SAMPLE_MATCH13_RATINGS,
+      forecasts: {},
       streams: [],
     },
     userOperations: savedOperations,
@@ -184,6 +192,14 @@ export function createInitialState(): ApplicationState {
         httpStatus: 200,
         errorMessage: null,
       },
+      match13: {
+        status: 'LIVE',
+        lastSuccessTimestamp: Date.now(),
+        lastAttemptTimestamp: Date.now(),
+        consecutiveFailures: 0,
+        httpStatus: 200,
+        errorMessage: null,
+      },
       statbotics: {
         status: 'LIVE',
         lastSuccessTimestamp: Date.now(),
@@ -194,9 +210,9 @@ export function createInitialState(): ApplicationState {
       },
     },
     videoReplay: {
-      activeMatchKey: '2026gacmp_qm41',
-      youtubeId: 'fJ9rUzIMcZQ',
-      matchTitle: 'Quals 41 - Team 1002 (W 161 - 105)',
+      activeMatchKey: '2026gacmp_qm13',
+      youtubeId: 'yEhH-UHuE2Y',
+      matchTitle: 'Quals 13 - Team 1002 (W 348 - 194)',
       isPlaying: false,
       currentTime: 0,
       duration: 150,
@@ -258,14 +274,31 @@ export function createInitialState(): ApplicationState {
           initialIsDriven = initialTab !== 'controller';
         }
       }
+      let initialIsVertical = false;
+      if (typeof window !== 'undefined') {
+        const storedVertical = sessionStorage.getItem('pitfusion_vertical_mode');
+        if (storedVertical !== null) {
+          initialIsVertical = storedVertical === 'true';
+        } else {
+          // Auto-detect vertical/portrait orientation (e.g. 1080x1920 or tall window)
+          initialIsVertical = window.innerHeight > window.innerWidth;
+        }
+      }
+
       return {
         activeTab: initialTab,
         remoteTargetTab: initialTab,
         isDrivenScreen: initialIsDriven,
+        countdownSeconds: 1080,
+        selectedScheduleMatchKey: '2026gacmp_qm13',
         isSetupModalOpen: false,
+        isArchitectureModalOpen: false,
         isThemeModalOpen: false,
         isStrategyModalOpen: false,
         isStrategyUnlocked: false,
+        isVerticalMode: initialIsVertical,
+        lastSyncedAt: Date.now(),
+        dataFreshness: 'live',
         replayMode: {
           isActive: false,
           matchKey: null,
@@ -290,6 +323,32 @@ export class Store {
       if (this.state.config.tenFootMode) {
         document.documentElement.classList.add('ten-foot-display');
       }
+
+      // Auto-detect viewport aspect ratio for vertical pit displays
+      window.addEventListener('resize', () => {
+        const isManual = sessionStorage.getItem('pitfusion_vertical_mode_manual');
+        if (!isManual) {
+          const isPortrait = window.innerHeight > window.innerWidth;
+          if (pitStore.getState().ui.isVerticalMode !== isPortrait) {
+            pitStore.setState((s) => ({
+              ...s,
+              ui: { ...s.ui, isVerticalMode: isPortrait },
+            }));
+          }
+        }
+      });
+
+      // Synchronized global match countdown ticker
+      setInterval(() => {
+        pitStore.setState((s) => {
+          const cur = s.ui.countdownSeconds ?? 1080;
+          if (cur <= 0) return s;
+          return {
+            ...s,
+            ui: { ...s.ui, countdownSeconds: cur - 1 },
+          };
+        });
+      }, 1000);
 
       // Initialize Cross-Tab and Remote Display Sync Channel
       DisplayBroadcastService.init((msg) => {
@@ -326,6 +385,21 @@ export class Store {
             }));
           }
         } else if (msg.type === 'MODE_TOGGLE' && msg.payload) {
+          // Sync simulator queue state and countdown across all screens
+          if (msg.payload.queueState !== undefined || msg.payload.countdownSeconds !== undefined) {
+            pitStore.setState((s) => ({
+              ...s,
+              ui: {
+                ...s.ui,
+                countdownSeconds: msg.payload.countdownSeconds !== undefined ? msg.payload.countdownSeconds : s.ui.countdownSeconds,
+              },
+              overrides: {
+                ...s.overrides,
+                queueState: msg.payload.queueState !== undefined ? msg.payload.queueState : s.overrides.queueState,
+              },
+            }));
+          }
+
           // Only toggle 10-foot mode remotely if this is the driven screen
           if (current.ui.isDrivenScreen && typeof msg.payload.tenFootMode === 'boolean') {
             pitStore.setState((s) => ({
@@ -489,6 +563,7 @@ export const Selectors = {
   activeEvent: (s: ApplicationState) => s.activeEvent.metadata,
   themeConfig: (s: ApplicationState) => s.config.theme,
   isSetupModalOpen: (s: ApplicationState) => s.ui.isSetupModalOpen,
+  isArchitectureModalOpen: (s: ApplicationState) => !!s.ui.isArchitectureModalOpen,
   demoMode: (s: ApplicationState) => s.config.demoMode,
   isThemeModalOpen: (s: ApplicationState) => s.ui.isThemeModalOpen,
   isStrategyModalOpen: (s: ApplicationState) => s.ui.isStrategyModalOpen,
@@ -545,8 +620,11 @@ export const Selectors = {
   telemetrySummary: (s: ApplicationState) => ({
     tba: s.telemetry.tba,
     nexus: s.telemetry.nexus,
-    statbotics: s.telemetry.statbotics,
+    match13: s.telemetry.match13,
+    statbotics: s.telemetry.statbotics || s.telemetry.match13,
   }),
+  match13Ratings: (s: ApplicationState) => s.activeEvent.ratings || s.activeEvent.epa,
+  match13Forecasts: (s: ApplicationState) => s.activeEvent.forecasts || {},
   videoReplay: (s: ApplicationState) => s.videoReplay,
   telemetryLogs: (s: ApplicationState) => s.telemetryLogs,
   matches: (s: ApplicationState) => s.activeEvent.schedule,
@@ -566,6 +644,31 @@ export const Selectors = {
   nexusManualEventKey: (s: ApplicationState) => s.config.nexusManualEventKey || '',
   isDrivenScreen: (s: ApplicationState) => s.ui.isDrivenScreen,
   remoteTargetTab: (s: ApplicationState) => s.ui.remoteTargetTab || s.ui.activeTab,
+  countdownSeconds: (s: ApplicationState) => s.ui.countdownSeconds ?? 1080,
+  pulseSimulatorState: (s: ApplicationState) => (s.overrides.queueState as 'AUTO' | 'QUEUE_5MIN' | 'ON_DECK' | 'NOW_QUEUING' | 'NO_MATCHES' | null) || 'AUTO',
+  selectedScheduleMatchKey: (s: ApplicationState) => s.ui.selectedScheduleMatchKey,
+  nextUpcomingMatch: (s: ApplicationState) => {
+    const override = s.overrides.nextMatchNumber;
+    const schedule = s.activeEvent.schedule;
+    const teamNum = s.config.teamNumber;
+
+    if (override !== null) {
+      const match = schedule.find((m) => m.matchNumber === override);
+      if (match) return match;
+    }
+
+    const teamMatches = schedule.filter(
+      (m) => m.redAlliance.teams.includes(teamNum) || m.blueAlliance.teams.includes(teamNum)
+    );
+
+    const upcoming = teamMatches.find((m) => m.status !== 'COMPLETED');
+    if (upcoming) return upcoming;
+
+    return teamMatches[0] || schedule[0] || null;
+  },
+  isVerticalMode: (s: ApplicationState) => !!s.ui.isVerticalMode,
+  lastSyncedAt: (s: ApplicationState) => s.ui.lastSyncedAt || Date.now(),
+  dataFreshness: (s: ApplicationState) => s.ui.dataFreshness || 'live',
 };
 
 // ==========================================
@@ -573,10 +676,218 @@ export const Selectors = {
 // ==========================================
 
 export const Actions = {
+  toggleVerticalMode(forced?: boolean) {
+    pitStore.setState((s) => {
+      const next = forced !== undefined ? forced : !s.ui.isVerticalMode;
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('pitfusion_vertical_mode', String(next));
+        sessionStorage.setItem('pitfusion_vertical_mode_manual', 'true');
+      }
+      return {
+        ...s,
+        ui: { ...s.ui, isVerticalMode: next },
+      };
+    });
+  },
+
+  setLastSyncedAt(timestamp: number, freshness?: 'live' | 'cached' | 'offline') {
+    pitStore.setState((s) => ({
+      ...s,
+      ui: {
+        ...s.ui,
+        lastSyncedAt: timestamp,
+        dataFreshness: freshness || s.ui.dataFreshness || 'live',
+      },
+    }));
+  },
+
+  async syncAllServices() {
+    pitStore.setState((s) => ({
+      ...s,
+      ui: { ...s.ui, dataFreshness: 'live' },
+    }));
+    try {
+      await Promise.allSettled([
+        Actions.pullTbaMatches(),
+        Actions.syncNexusData(),
+        Actions.pullStatboticsEpa(),
+      ]);
+      pitStore.setState((s) => ({
+        ...s,
+        ui: {
+          ...s.ui,
+          lastSyncedAt: Date.now(),
+          dataFreshness: 'live',
+        },
+      }));
+    } catch {
+      pitStore.setState((s) => ({
+        ...s,
+        ui: {
+          ...s.ui,
+          lastSyncedAt: Date.now(),
+          dataFreshness: 'cached',
+        },
+      }));
+    }
+  },
+
   navigate(tab: NavigationTab) {
     pitStore.setActiveTab(tab);
     if (typeof window !== 'undefined' && window.location.hash !== `#${tab}`) {
       window.location.hash = `#${tab}`;
+    }
+  },
+
+  setCountdownSeconds(sec: number) {
+    pitStore.setState((s) => ({
+      ...s,
+      ui: { ...s.ui, countdownSeconds: Math.max(0, sec) },
+    }));
+  },
+
+  setPulseSimulatorState(mode: 'AUTO' | 'QUEUE_5MIN' | 'ON_DECK' | 'NOW_QUEUING' | 'NO_MATCHES') {
+    let targetCountdown = 900; // AUTO: 15 mins
+    let queueStatus = 'On Schedule';
+    if (mode === 'QUEUE_5MIN') {
+      targetCountdown = 300;
+      queueStatus = 'Queue in 5 min';
+    } else if (mode === 'ON_DECK') {
+      targetCountdown = 120;
+      queueStatus = 'On Deck';
+    } else if (mode === 'NOW_QUEUING') {
+      targetCountdown = 30;
+      queueStatus = 'Now Queuing';
+    } else if (mode === 'NO_MATCHES') {
+      targetCountdown = 0;
+      queueStatus = 'All Matches Completed';
+    }
+
+    pitStore.setState((s) => ({
+      ...s,
+      ui: {
+        ...s.ui,
+        countdownSeconds: targetCountdown,
+      },
+      overrides: {
+        ...s.overrides,
+        queueState: mode === 'AUTO' ? null : mode,
+      },
+      activeEvent: {
+        ...s.activeEvent,
+        queue: {
+          ...s.activeEvent.queue,
+          statusText: queueStatus,
+          nowQueuingMatchNumber: mode === 'NO_MATCHES' ? null : (s.overrides.nextMatchNumber || s.activeEvent.queue.nowQueuingMatchNumber || 13),
+        },
+      },
+    }));
+
+    DisplayBroadcastService.broadcast('MODE_TOGGLE', {
+      queueState: mode === 'AUTO' ? null : mode,
+      countdownSeconds: targetCountdown,
+    });
+  },
+
+  setNextMatchNumber(matchNumber: number | null, allianceColor?: 'red' | 'blue') {
+    pitStore.setState((s) => {
+      let color = allianceColor;
+      let matchedKey = s.ui.selectedScheduleMatchKey;
+      let newCountdown = s.ui.countdownSeconds;
+      let statusText = s.activeEvent.queue?.statusText || 'On Schedule';
+
+      if (matchNumber !== null) {
+        const schedule =
+          s.activeEvent.schedule && s.activeEvent.schedule.length > 0
+            ? s.activeEvent.schedule
+            : TbaService.generateMatchesForTeamAndEvent(s.config.teamNumber, s.config.selectedEventKey);
+
+        const match = schedule.find((m) => m.matchNumber === matchNumber);
+        if (match) {
+          color = match.redAlliance.teams.includes(s.config.teamNumber) ? 'red' : 'blue';
+          matchedKey = match.key;
+          if (match.status === 'COMPLETED') {
+            newCountdown = 0;
+            statusText = `Qual ${matchNumber} Completed`;
+          } else if (match.scheduledTime) {
+            const diff = Math.floor((match.scheduledTime - Date.now()) / 1000);
+            newCountdown = diff > 0 ? diff : 120;
+            statusText = `Qual ${matchNumber} in queuing lane`;
+          } else {
+            const curQ = s.activeEvent.queue?.currentMatchNumber || 12;
+            const diffMatches = Math.max(1, match.matchNumber - curQ);
+            newCountdown = diffMatches * 420;
+            statusText = `Qual ${matchNumber} on schedule`;
+          }
+        }
+      }
+
+      return {
+        ...s,
+        ui: {
+          ...s.ui,
+          countdownSeconds: newCountdown,
+          selectedScheduleMatchKey: matchedKey,
+        },
+        overrides: {
+          ...s.overrides,
+          nextMatchNumber: matchNumber,
+          allianceColor: color || s.overrides.allianceColor || 'red',
+        },
+        activeEvent: {
+          ...s.activeEvent,
+          queue: {
+            ...s.activeEvent.queue,
+            statusText,
+            nowQueuingMatchNumber: matchNumber ?? s.activeEvent.queue.nowQueuingMatchNumber,
+          },
+        },
+      };
+    });
+
+    const updated = pitStore.getState();
+    DisplayBroadcastService.broadcast('MODE_TOGGLE', {
+      queueState: updated.overrides.queueState,
+      countdownSeconds: updated.ui.countdownSeconds,
+    });
+  },
+
+  selectScheduleMatch(matchKey: string) {
+    const state = pitStore.getState();
+    const schedule =
+      state.activeEvent.schedule && state.activeEvent.schedule.length > 0
+        ? state.activeEvent.schedule
+        : TbaService.generateMatchesForTeamAndEvent(state.config.teamNumber, state.config.selectedEventKey);
+
+    const match = schedule.find(
+      (m) =>
+        m.key === matchKey ||
+        (matchKey.includes('_') && m.key.endsWith(`_${matchKey.split('_').slice(1).join('_')}`)) ||
+        (m.matchNumber !== undefined && (matchKey.endsWith(`qm${m.matchNumber}`) || matchKey.endsWith(`_${m.matchNumber}`)))
+    );
+
+    if (match) {
+      const videoKey = match.videos && match.videos.length > 0 ? match.videos[0].key : '';
+      const teamNum = state.config.teamNumber;
+      const isBlue = match.blueAlliance.teams.includes(teamNum);
+      const isWinner = (isBlue && match.winner === 'blue') || (!isBlue && match.winner === 'red');
+      const scoreStr =
+        match.redAlliance.score !== null && match.blueAlliance.score !== null
+          ? `(${isWinner ? 'W' : 'L'} ${isBlue ? match.blueAlliance.score : match.redAlliance.score} - ${isBlue ? match.redAlliance.score : match.blueAlliance.score})`
+          : '';
+
+      Actions.selectReplayMatch(
+        match.key,
+        videoKey,
+        `${formatMatchLabel(match)} • Team ${teamNum} ${scoreStr}`
+      );
+    }
+    pitStore.setState((s) => ({
+      ...s,
+      ui: { ...s.ui, selectedScheduleMatchKey: match ? match.key : matchKey, activeTab: 'schedule' },
+    }));
+    if (typeof window !== 'undefined') {
+      window.location.hash = '#schedule';
     }
   },
 
@@ -621,147 +932,37 @@ export const Actions = {
     }));
   },
 
-  enableDemoMode() {
-    const now = Date.now();
-    // Simulate Day 2 at 11:30:00 AM
-    const targetSimulatedDate = new Date();
-    targetSimulatedDate.setHours(11, 30, 0, 0);
-    const simulatedBaseTime = targetSimulatedDate.getTime();
-    const simulatedOffset = simulatedBaseTime - now;
-
-    // Day 2 schedule at 11:30 AM:
-    // Matches 3, 7, 12 completed; Match 13 queuing next at 11:45 AM (starts in 15 min)!
-    const demoMatches: MatchModel[] = [
-      {
-        key: '2026gacmp_qm3',
-        matchNumber: 3,
-        compLevel: 'QUAL',
-        scheduledTime: simulatedBaseTime - 1000 * 60 * 180,
-        actualTime: simulatedBaseTime - 1000 * 60 * 178,
-        redAlliance: { teams: [1002, 2415, 8080], score: 142, epaSum: 140.2 },
-        blueAlliance: { teams: [6919, 5203, 1683], score: 118, epaSum: 122.0 },
-        winner: 'red',
-        status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'kJQP7kiw5Fk' }],
-      },
-      {
-        key: '2026gacmp_qm7',
-        matchNumber: 7,
-        compLevel: 'QUAL',
-        scheduledTime: simulatedBaseTime - 1000 * 60 * 110,
-        actualTime: simulatedBaseTime - 1000 * 60 * 108,
-        redAlliance: { teams: [4188, 7451, 6705], score: 124, epaSum: 130.4 },
-        blueAlliance: { teams: [1002, 1261, 3344], score: 156, epaSum: 148.5 },
-        winner: 'blue',
-        status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'L_LUpnjgPso' }],
-      },
-      {
-        key: '2026gacmp_qm12',
-        matchNumber: 12,
-        compLevel: 'QUAL',
-        scheduledTime: simulatedBaseTime - 1000 * 60 * 8, // 11:22 AM
-        actualTime: simulatedBaseTime - 1000 * 60 * 7,
-        redAlliance: { teams: [1002, 1771, 2974], score: 148, epaSum: 144.2 },
-        blueAlliance: { teams: [1414, 4188, 5109], score: 112, epaSum: 118.5 },
-        winner: 'red',
-        status: 'COMPLETED',
-        videos: [{ type: 'youtube', key: 'kJQP7kiw5Fk' }],
-      },
-      {
-        key: '2026gacmp_qm13',
-        matchNumber: 13,
-        compLevel: 'QUAL',
-        scheduledTime: simulatedBaseTime + 1000 * 60 * 15, // 11:45 AM (15 mins from 11:30 AM)
-        redAlliance: { teams: [1002, 1771, 3635], score: null, epaSum: 152.4 },
-        blueAlliance: { teams: [1414, 4188, 1648], score: null, epaSum: 147.2 },
-        winner: null,
-        status: 'QUEUED',
-        videos: [],
-      },
-      {
-        key: '2026gacmp_qm18',
-        matchNumber: 18,
-        compLevel: 'QUAL',
-        scheduledTime: simulatedBaseTime + 1000 * 60 * 105, // 1:15 PM
-        redAlliance: { teams: [1002, 5203, 8736], score: null, epaSum: 138.0 },
-        blueAlliance: { teams: [1771, 1648, 2974], score: null, epaSum: 149.0 },
-        winner: null,
-        status: 'SCHEDULED',
-        videos: [],
-      },
-      {
-        key: '2026gacmp_qm24',
-        matchNumber: 24,
-        compLevel: 'QUAL',
-        scheduledTime: simulatedBaseTime + 1000 * 60 * 155, // 2:05 PM
-        redAlliance: { teams: [1261, 832, 1683], score: null, epaSum: 124.0 },
-        blueAlliance: { teams: [1002, 4026, 6919], score: null, epaSum: 142.6 },
-        winner: null,
-        status: 'SCHEDULED',
-        videos: [],
-      },
-    ];
-
+  setArchitectureModalOpen(isOpen: boolean) {
     pitStore.setState((s) => ({
       ...s,
-      config: {
-        ...s.config,
-        teamNumber: 1002,
-        verifiedTeamName: 'CircuitRunners Robotics',
-        selectedEventKey: '2026gacmp',
-        demoMode: {
-          enabled: true,
-          dayLabel: 'Day 2',
-          timeString: '11:30 AM',
-          simulatedTimeOffset: simulatedOffset,
-          eventKey: '2026gacmp',
-          teamNumber: 1002,
-        },
-      },
-      activeEvent: {
-        ...s.activeEvent,
-        metadata: {
-          key: '2026gacmp',
-          name: 'Peachtree District Championship 2026',
-          shortName: 'PCH DCMP 2026',
-          city: 'Macon',
-          stateProv: 'GA',
-          startDate: '2026-04-03',
-          endDate: '2026-04-05',
-          year: 2026,
-          category: 'CURRENT',
-          timezone: 'America/New_York',
-          webcasts: [
-            {
-              channel: 'UCr_x7a303YmQ61V81kP0gqQ',
-              type: 'youtube',
-              name: 'PCH District Championship YouTube Live',
-            },
-          ],
-        },
-        schedule: demoMatches,
-        queue: {
-          currentMatchNumber: 12,
-          currentCompLevel: 'QUAL',
-          nowQueuingMatchNumber: 13,
-          statusText: 'Qual 12 on field • Qual 13 in queuing lane (Team 1002 preparing Station Red 1)',
-          updatedAt: now,
-          isEstimated: false,
-        },
-        announcements: [
-          { id: 'ann-demo-1', message: 'Day 2 Morning Competition • Lunch Break scheduled 12:30 PM - 1:30 PM', postedAt: now - 1000 * 60 * 25 },
-          { id: 'ann-demo-2', message: 'Team 1002 Station Red 1 for Qual 13 • Drive Team report to queue entrance', postedAt: now - 1000 * 60 * 10 },
-          { id: 'ann-demo-3', message: 'Alliance Selection scheduled for Day 2 at 3:30 PM on Main Arena Stage', postedAt: now - 1000 * 60 * 5 },
-        ],
-      },
-      overrides: {
-        ...s.overrides,
-        nextMatchNumber: 13,
-        allianceColor: 'red',
-        queueState: 'QUEUE_5MIN',
-      },
+      ui: { ...s.ui, isArchitectureModalOpen: isOpen },
     }));
+  },
+
+  enableDemoMode(teamNum?: number, eventKey?: string, stepIndex: number = 0) {
+    const state = pitStore.getState();
+    const targetTeam = teamNum || state.config.teamNumber || 1002;
+    const targetEvent = eventKey || state.config.selectedEventKey || '2026gacmp';
+    const simData = QualityControlService.generateSimulatedCompetition(targetTeam, targetEvent, { stepIndex });
+    QualityControlService.applySimulatedCompetition(simData);
+  },
+
+  advanceSimulatedCompetition() {
+    const state = pitStore.getState();
+    const currentStep = state.config.demoMode?.stepIndex ?? 0;
+    const nextStep = (currentStep + 1) % 3;
+    const targetTeam = state.config.teamNumber || 1002;
+    const targetEvent = state.config.selectedEventKey || '2026gacmp';
+    const simData = QualityControlService.generateSimulatedCompetition(targetTeam, targetEvent, { stepIndex: nextStep });
+    QualityControlService.applySimulatedCompetition(simData);
+  },
+
+  resetSimulatedCompetition() {
+    const state = pitStore.getState();
+    const targetTeam = state.config.teamNumber || 1002;
+    const targetEvent = state.config.selectedEventKey || '2026gacmp';
+    const simData = QualityControlService.generateSimulatedCompetition(targetTeam, targetEvent, { stepIndex: 0 });
+    QualityControlService.applySimulatedCompetition(simData);
   },
 
   disableDemoMode() {
@@ -776,6 +977,7 @@ export const Actions = {
           simulatedTimeOffset: 0,
           eventKey: s.config.selectedEventKey,
           teamNumber: s.config.teamNumber,
+          stepIndex: 0,
         },
       },
       overrides: {
@@ -805,7 +1007,7 @@ export const Actions = {
     }
 
     if (params.demoMode) {
-      Actions.enableDemoMode();
+      Actions.enableDemoMode(params.teamNumber, params.eventKey);
     } else {
       if (pitStore.getState().config.demoMode?.enabled) {
         Actions.disableDemoMode();
@@ -1005,18 +1207,40 @@ export const Actions = {
     pitStore.setState((s) => {
       CacheManager.clearMemoryCache();
       const resolved = TbaService.resolveEventMetadata(eventKey, eventName);
+      const teamNum = s.config.teamNumber;
+      const initialSchedule = TbaService.generateMatchesForTeamAndEvent(teamNum, eventKey);
+      const initialRankings = TbaService.generateRankingsForEvent(eventKey, teamNum);
+      const nextUpcoming = initialSchedule.find((m) => m.status !== 'COMPLETED');
+      const firstMatchKey = nextUpcoming?.key || initialSchedule[0]?.key || `${eventKey}_qm13`;
+      const initialCountdown = nextUpcoming && nextUpcoming.scheduledTime && nextUpcoming.scheduledTime > Date.now()
+        ? Math.max(0, Math.floor((nextUpcoming.scheduledTime - Date.now()) / 1000))
+        : 1080;
+
       return {
         ...s,
         config: {
           ...s.config,
           selectedEventKey: eventKey,
         },
+        ui: {
+          ...s.ui,
+          selectedScheduleMatchKey: firstMatchKey,
+          countdownSeconds: initialCountdown,
+        },
         activeEvent: {
           ...s.activeEvent,
           metadata: resolved,
-          schedule: [],
-          rankings: [],
+          schedule: initialSchedule,
+          rankings: initialRankings,
           epa: {},
+          queue: {
+            currentMatchNumber: 12,
+            currentCompLevel: 'QUAL',
+            nowQueuingMatchNumber: 13,
+            statusText: 'Qual 12 on field • Qual 13 in queuing lane',
+            updatedAt: Date.now(),
+            isEstimated: false,
+          },
         },
         overrides: {
           ...s.overrides,
@@ -1030,16 +1254,16 @@ export const Actions = {
     Actions.pullStatboticsEpa();
   },
 
-  updateServiceHealth(service: 'tba' | 'nexus' | 'statbotics', status: ServiceStatus, error?: string) {
+  updateServiceHealth(service: 'tba' | 'nexus' | 'match13' | 'statbotics', status: ServiceStatus, error?: string) {
     pitStore.setState((s) => ({
       ...s,
       telemetry: {
         ...s.telemetry,
         [service]: {
-          ...s.telemetry[service],
+          ...s.telemetry[service as keyof typeof s.telemetry],
           status,
           lastAttemptTimestamp: Date.now(),
-          lastSuccessTimestamp: status === 'LIVE' ? Date.now() : s.telemetry[service].lastSuccessTimestamp,
+          lastSuccessTimestamp: status === 'LIVE' ? Date.now() : (s.telemetry[service as keyof typeof s.telemetry]?.lastSuccessTimestamp || Date.now()),
           errorMessage: error || null,
         },
       },
@@ -1140,6 +1364,33 @@ export const Actions = {
 
   async pullTbaMatches(customEventKey?: string) {
     const state = pitStore.getState();
+    if (state.config.demoMode?.enabled) {
+      pitStore.setState((s) => ({
+        ...s,
+        telemetry: {
+          ...s.telemetry,
+          tba: {
+            status: 'LIVE',
+            lastAttemptTimestamp: Date.now(),
+            lastSuccessTimestamp: Date.now(),
+            consecutiveFailures: 0,
+            httpStatus: 200,
+            errorMessage: null,
+          },
+        },
+        ui: {
+          ...s.ui,
+          lastSyncedAt: Date.now(),
+          dataFreshness: 'live',
+        },
+      }));
+      return {
+        matches: state.activeEvent.schedule,
+        source: 'CACHE' as const,
+        message: `Simulated competition active for Team ${state.config.teamNumber}. All systems up-to-date.`,
+        latencyMs: 12,
+      };
+    }
     const eventKey = customEventKey || state.activeEvent.metadata?.key || state.config.selectedEventKey;
     const teamNum = state.config.teamNumber;
     const apiKey = state.config.tbaApiKey;
@@ -1237,12 +1488,22 @@ export const Actions = {
             },
             ...s.telemetryLogs.slice(0, 49),
           ],
+          ui: {
+            ...s.ui,
+            lastSyncedAt: Date.now(),
+            dataFreshness: result.source === 'CACHE' ? 'cached' : 'live',
+          },
         };
       });
       return result;
     } catch (err: any) {
       pitStore.setState((s) => ({
         ...s,
+        ui: {
+          ...s.ui,
+          lastSyncedAt: Date.now(),
+          dataFreshness: 'cached',
+        },
         telemetry: {
           ...s.telemetry,
           tba: {
@@ -1267,23 +1528,54 @@ export const Actions = {
     }
   },
 
-  async pullStatboticsEpa(teamNumber?: number, eventKey?: string) {
+  async setMatch13ApiKey(apiKey: string) {
+    const trimmed = apiKey.trim();
+    Match13Service.setApiKey(trimmed);
+    pitStore.setState((s) => ({
+      ...s,
+      config: {
+        ...s.config,
+        match13ApiKey: trimmed,
+      },
+    }));
+    await Actions.pingService('match13');
+  },
+
+  async pullMatch13Ratings(teamNumber?: number, eventKey?: string) {
     const teamNum = teamNumber ?? pitStore.getState().config.teamNumber;
     const evKey = eventKey ?? pitStore.getState().config.selectedEventKey;
 
     try {
-      const result = await StatboticsService.pullTeamEpa(teamNum, evKey);
+      const result = await Match13Service.pullTeamRating(teamNum, evKey);
+      const forecastRes = await Match13Service.pullEventForecasts(evKey);
+
       pitStore.setState((s) => ({
         ...s,
         activeEvent: {
           ...s.activeEvent,
           epa: {
             ...s.activeEvent.epa,
-            [teamNum]: result.epa,
+            [teamNum]: result.rating as unknown as TeamEPAModel,
+          },
+          ratings: {
+            ...(s.activeEvent.ratings || {}),
+            [teamNum]: result.rating,
+          },
+          forecasts: {
+            ...(s.activeEvent.forecasts || {}),
+            ...forecastRes.forecasts,
           },
         },
         telemetry: {
           ...s.telemetry,
+          match13: {
+            status: result.source === 'API' ? 'LIVE' : 'FALLBACK',
+            lastAttemptTimestamp: Date.now(),
+            lastSuccessTimestamp: Date.now(),
+            consecutiveFailures: 0,
+            httpStatus: 200,
+            errorMessage: null,
+          },
           statbotics: {
             status: result.source === 'API' ? 'LIVE' : 'FALLBACK',
             lastAttemptTimestamp: Date.now(),
@@ -1297,7 +1589,7 @@ export const Actions = {
           {
             id: `log-${Date.now()}`,
             timestamp: Date.now(),
-            service: 'STATBOTICS',
+            service: 'MATCH13',
             status: 'SUCCESS',
             message: result.message,
             latencyMs: result.latencyMs,
@@ -1311,21 +1603,21 @@ export const Actions = {
         ...s,
         telemetry: {
           ...s.telemetry,
-          statbotics: {
-            ...s.telemetry.statbotics,
+          match13: {
+            ...s.telemetry.match13,
             status: 'FALLBACK',
             lastAttemptTimestamp: Date.now(),
-            consecutiveFailures: s.telemetry.statbotics.consecutiveFailures + 1,
-            errorMessage: err?.message || 'Failed to pull from Statbotics',
+            consecutiveFailures: s.telemetry.match13.consecutiveFailures + 1,
+            errorMessage: err?.message || 'Failed to pull from Match 13',
           },
         },
         telemetryLogs: [
           {
             id: `log-${Date.now()}`,
             timestamp: Date.now(),
-            service: 'STATBOTICS',
+            service: 'MATCH13',
             status: 'ERROR',
-            message: `Statbotics Sync Error: ${err?.message || 'Network error'}`,
+            message: `Match 13 Sync Error: ${err?.message || 'Network error'}`,
           },
           ...s.telemetryLogs.slice(0, 49),
         ],
@@ -1333,7 +1625,12 @@ export const Actions = {
     }
   },
 
-  async pingService(service: 'tba' | 'nexus' | 'statbotics') {
+  async pullStatboticsEpa(teamNumber?: number, eventKey?: string) {
+    // Delegated to Match 13 Ratings Engine
+    return Actions.pullMatch13Ratings(teamNumber, eventKey);
+  },
+
+  async pingService(service: 'tba' | 'nexus' | 'match13' | 'statbotics') {
     const start = performance.now();
     const state = pitStore.getState();
 
@@ -1429,34 +1726,45 @@ export const Actions = {
       }
     }
 
-    // Statbotics ping
-    await new Promise((r) => setTimeout(r, Math.floor(45 + Math.random() * 75)));
-    const latency = Math.round(performance.now() - start);
+    // Match 13 ping (or legacy statbotics)
+    const m13Res = await Match13Service.ping(state.config.match13ApiKey);
+    const latency = m13Res.latencyMs;
+    const isLive = m13Res.success && (m13Res.status === 200 || m13Res.status === 401);
 
     pitStore.setState((s) => ({
       ...s,
       telemetry: {
         ...s.telemetry,
-        [service]: {
-          ...s.telemetry[service],
-          status: 'LIVE',
+        match13: {
+          ...s.telemetry.match13,
+          status: m13Res.status === 200 ? 'LIVE' : m13Res.status === 401 ? 'RECENT' : 'FALLBACK',
           lastAttemptTimestamp: Date.now(),
-          lastSuccessTimestamp: Date.now(),
-          httpStatus: 200,
+          lastSuccessTimestamp: isLive ? Date.now() : s.telemetry.match13.lastSuccessTimestamp,
+          httpStatus: m13Res.status,
+          errorMessage: m13Res.success ? null : m13Res.message,
+        },
+        statbotics: {
+          ...(s.telemetry.statbotics || s.telemetry.match13),
+          status: m13Res.status === 200 ? 'LIVE' : m13Res.status === 401 ? 'RECENT' : 'FALLBACK',
+          lastAttemptTimestamp: Date.now(),
+          lastSuccessTimestamp: isLive ? Date.now() : (s.telemetry.statbotics?.lastSuccessTimestamp || Date.now()),
+          httpStatus: m13Res.status,
         },
       },
       telemetryLogs: [
         {
           id: `log-${Date.now()}`,
           timestamp: Date.now(),
-          service: service.toUpperCase() as any,
-          status: 'SUCCESS',
-          message: `Diagnostic Ping: 200 OK (${latency}ms round-trip)`,
+          service: 'MATCH13',
+          status: m13Res.success ? 'SUCCESS' : 'WARNING',
+          message: `Match 13 Ping: HTTP ${m13Res.status} - ${m13Res.message} (${latency}ms)`,
           latencyMs: latency,
         },
         ...s.telemetryLogs.slice(0, 49),
       ],
     }));
+
+    return m13Res;
   },
 
   async syncNexusData(customEventKey?: string) {
@@ -1684,18 +1992,39 @@ export const Actions = {
   },
 
   setTeamNumber(teamNumber: number) {
+    if (pitStore.getState().config.demoMode?.enabled) {
+      Actions.enableDemoMode(teamNumber);
+      return;
+    }
     const immediateNickname = TbaService.resolveTeamNickname(teamNumber);
     const immediateMeta = getTeamMetadata(teamNumber);
-    pitStore.setState((s) => ({
-      ...s,
-      config: {
-        ...s.config,
-        teamNumber,
-        verifiedTeamName: immediateNickname,
-        verifiedTeamCity: immediateMeta.city,
-        verifiedTeamState: immediateMeta.state,
-      },
-    }));
+    pitStore.setState((s) => {
+      const immediateMatches = TbaService.generateMatchesForTeamAndEvent(teamNumber, s.config.selectedEventKey);
+      const nextUpcoming = immediateMatches.find((m) => m.status !== 'COMPLETED');
+      const targetMatchKey = nextUpcoming?.key || immediateMatches[0]?.key || `${s.config.selectedEventKey}_qm13`;
+      const initialCountdown = nextUpcoming && nextUpcoming.scheduledTime && nextUpcoming.scheduledTime > Date.now()
+        ? Math.max(0, Math.floor((nextUpcoming.scheduledTime - Date.now()) / 1000))
+        : 1080;
+      return {
+        ...s,
+        config: {
+          ...s.config,
+          teamNumber,
+          verifiedTeamName: immediateNickname,
+          verifiedTeamCity: immediateMeta.city,
+          verifiedTeamState: immediateMeta.state,
+        },
+        ui: {
+          ...s.ui,
+          selectedScheduleMatchKey: targetMatchKey,
+          countdownSeconds: initialCountdown,
+        },
+        activeEvent: {
+          ...s.activeEvent,
+          schedule: immediateMatches,
+        },
+      };
+    });
 
     // Auto-apply team theme preset if this team is one of the active presets
     const presetMap: Record<number, string> = {

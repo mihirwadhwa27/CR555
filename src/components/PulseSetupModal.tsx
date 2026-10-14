@@ -23,18 +23,20 @@ import {
   Loader2,
   MapPin,
   Key,
+  ExternalLink,
+  Zap,
 } from 'lucide-react';
 import { usePitState, Actions, Selectors } from '../store';
-import { TbaService } from '../services';
+import { TbaService, Match13Service } from '../services';
 import { CrLogo } from './CrLogo';
 
-// Quick selection presets for configured team themes (or type any team number below)
+// Quick selection presets for the 5 target teams & events this season
 const TEAM_PRESETS = [
-  { number: 1002, name: 'CircuitRunners Robotics', location: 'Marietta, GA', isHost: true },
-  { number: 1833, name: 'Team BEAN', location: 'Cumming, GA', isHost: false },
-  { number: 1771, name: 'North Gwinnett Robotics', location: 'Suwanee, GA', isHost: false },
-  { number: 2974, name: 'Walton Robotics', location: 'Marietta, GA', isHost: false },
-  { number: 8736, name: 'The Mechanisms', location: 'Marietta, GA', isHost: false },
+  { number: 1002, name: 'CircuitRunners Robotics', location: 'Marietta, GA', eventKey: '2026gadal', eventName: '2026 PCH District Dalton Event', isHost: true },
+  { number: 118, name: 'Robonauts', location: 'League City, TX', eventKey: '2026joh', eventName: '2026 FIRST Championship - Johnson Division', isHost: false },
+  { number: 9483, name: 'Istanbul Wildcats', location: 'Başakşehir, Istanbul', eventKey: '2026tuis', eventName: '2026 Istanbul Regional', isHost: false },
+  { number: 2046, name: 'Bear Metal', location: 'Maple Valley, WA', eventKey: '2026wabon', eventName: '2026 PNW District Bonney Lake Event', isHost: false },
+  { number: 973, name: 'Greybots', location: 'Atascadero, CA', eventKey: '2026cacv', eventName: '2026 Central Valley Regional', isHost: false },
 ];
 
 export const PulseSetupModal: React.FC = () => {
@@ -52,6 +54,9 @@ export const PulseSetupModal: React.FC = () => {
   const [isCustomEventInput, setIsCustomEventInput] = useState<boolean>(false);
   const [customEventKey, setCustomEventKey] = useState<string>('');
   const [tbaApiKeyInput, setTbaApiKeyInput] = useState<string>('');
+  const [match13ApiKeyInput, setMatch13ApiKeyInput] = useState<string>('');
+  const [isTestingMatch13, setIsTestingMatch13] = useState<boolean>(false);
+  const [match13TestResult, setMatch13TestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   // Dynamically pulled competition events for the selected team from TBA
   const [teamEvents, setTeamEvents] = useState<
@@ -80,8 +85,10 @@ export const PulseSetupModal: React.FC = () => {
           ? currentConfig.tbaApiKey
           : ''
       );
+      setMatch13ApiKeyInput(currentConfig.match13ApiKey || Match13Service.getApiKey() || '');
+      setMatch13TestResult(null);
     }
-  }, [isOpen, currentTeam.number, currentTeam.name, currentEvent?.key, currentEvent?.name, demoMode?.enabled, currentConfig.tbaApiKey]);
+  }, [isOpen, currentTeam.number, currentTeam.name, currentEvent?.key, currentEvent?.name, demoMode?.enabled, currentConfig.tbaApiKey, currentConfig.match13ApiKey]);
 
   // Pull competition events and verified team name from The Blue Alliance whenever selectedTeamNumber changes
   useEffect(() => {
@@ -119,6 +126,12 @@ export const PulseSetupModal: React.FC = () => {
     const resolved = TbaService.resolveTeamNickname(num);
     setSelectedTeamName(resolved);
 
+    const preset = TEAM_PRESETS.find((p) => p.number === num);
+    if (preset) {
+      setSelectedEventKey(preset.eventKey);
+      setSelectedEventName(preset.eventName);
+    }
+
     // If live API is configured, pull newest team details
     TbaService.pullTeamInfoFromTba(num, currentConfig.tbaApiKey).then((info) => {
       if (info && info.nickname) {
@@ -138,9 +151,27 @@ export const PulseSetupModal: React.FC = () => {
     }
   };
 
+  const handleTestMatch13 = async () => {
+    setIsTestingMatch13(true);
+    setMatch13TestResult(null);
+    try {
+      const res = await Match13Service.ping(match13ApiKeyInput);
+      setMatch13TestResult({
+        success: res.success,
+        message: res.message,
+      });
+    } finally {
+      setIsTestingMatch13(false);
+    }
+  };
+
   const handleSaveAndLaunch = () => {
     if (tbaApiKeyInput.trim() && tbaApiKeyInput.trim() !== currentConfig.tbaApiKey) {
       Actions.setTbaApiKey(tbaApiKeyInput.trim());
+    }
+
+    if (match13ApiKeyInput.trim() !== (currentConfig.match13ApiKey || '')) {
+      Actions.setMatch13ApiKey(match13ApiKeyInput.trim());
     }
 
     if (isDemoModeOptedIn) {
@@ -177,22 +208,29 @@ export const PulseSetupModal: React.FC = () => {
     Actions.setSetupModalOpen(false);
   };
 
-  const formatDates = (start: string, end: string) => {
+  const formatDates = (start?: string, end?: string) => {
     if (!start) return '';
     try {
-      const s = new Date(start + 'T00:00:00');
-      const e = end ? new Date(end + 'T00:00:00') : s;
-      const sMonth = s.toLocaleDateString([], { month: 'short' });
-      const sDay = s.getDate();
-      const eDay = e.getDate();
-      const year = s.getFullYear();
-      if (s.getMonth() === e.getMonth()) {
-        return `${sMonth} ${sDay}-${eDay}, ${year}`;
+      const cleanStart = String(start).split('T')[0].trim();
+      const cleanEnd = end ? String(end).split('T')[0].trim() : cleanStart;
+      const sParts = cleanStart.split('-').map(Number);
+      const eParts = cleanEnd.split('-').map(Number);
+      if (sParts.length >= 3 && !isNaN(sParts[0]) && !isNaN(sParts[1]) && !isNaN(sParts[2])) {
+        const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const sMonth = MONTHS[sParts[1] - 1] || '';
+        const sDay = sParts[2];
+        const year = sParts[0];
+        const eDay = eParts.length >= 3 && !isNaN(eParts[2]) ? eParts[2] : sDay;
+        const eMonth = eParts.length >= 3 && !isNaN(eParts[1]) ? MONTHS[eParts[1] - 1] || sMonth : sMonth;
+
+        if (sParts[1] === eParts[1]) {
+          return sDay === eDay ? `${sMonth} ${sDay}, ${year}` : `${sMonth} ${sDay}–${eDay}, ${year}`;
+        }
+        return `${sMonth} ${sDay} – ${eMonth} ${eDay}, ${year}`;
       }
-      const eMonth = e.toLocaleDateString([], { month: 'short' });
-      return `${sMonth} ${sDay} - ${eMonth} ${eDay}, ${year}`;
+      return `${start}${end && end !== start ? ` - ${end}` : ''}`;
     } catch {
-      return `${start} - ${end}`;
+      return `${start}${end && end !== start ? ` - ${end}` : ''}`;
     }
   };
 
@@ -398,7 +436,7 @@ export const PulseSetupModal: React.FC = () => {
                         {isSelected && <Check size={14} className="text-emerald-400 shrink-0" />}
                       </div>
                       <div className="text-[11px] text-emerald-300/80 font-mono mt-0.5">
-                        {formatDates(ev.startDate, ev.endDate)}
+                        {formatDates(ev.startDate || (ev as any).start_date, ev.endDate || (ev as any).end_date)}
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-[10px] text-zinc-400 mt-2 font-mono">
@@ -456,9 +494,10 @@ export const PulseSetupModal: React.FC = () => {
                 href="https://www.thebluealliance.com/account"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[10px] text-amber-400 hover:underline"
+                className="text-[10px] text-amber-400 hover:underline inline-flex items-center gap-1"
               >
-                Get Free Read Key ↗
+                <span>Get Free Read Key</span>
+                <ExternalLink size={10} />
               </a>
             </div>
             <p className="text-[11px] text-zinc-400 leading-relaxed">
@@ -472,13 +511,81 @@ export const PulseSetupModal: React.FC = () => {
               className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 focus:outline-hidden focus:border-amber-400"
             />
           </div>
+
+          {/* MATCH 13 SYSTEM API KEY (xP RATINGS & FORECASTS) */}
+          <div className="space-y-2.5 p-3.5 rounded-xl bg-zinc-900/40 border border-zinc-800/80">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                <Zap size={14} className="text-emerald-400" />
+                <span>4. Match 13 System API Key (xP Ratings & Forecasts)</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 font-normal">Active System</span>
+              </label>
+              <a
+                href="https://www.match13.com/docs/api"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] text-emerald-400 hover:underline inline-flex items-center gap-1"
+              >
+                <span>match13.com/docs/api</span>
+                <ExternalLink size={10} />
+              </a>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Match 13 provides high-uptime team ratings (xP) and predictive match forecasts (replacing Statbotics). Enter your Match 13 Bearer API Key from your account page.
+            </p>
+            <div className="flex items-center gap-2">
+              <input
+                type="password"
+                value={match13ApiKeyInput}
+                onChange={(e) => {
+                  setMatch13ApiKeyInput(e.target.value);
+                  setMatch13TestResult(null);
+                }}
+                placeholder="Paste Match 13 Bearer API Key (optional - verified demo baseline active)"
+                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-zinc-200 focus:outline-hidden focus:border-emerald-400"
+              />
+              <button
+                type="button"
+                onClick={handleTestMatch13}
+                disabled={isTestingMatch13}
+                className="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isTestingMatch13 ? 'Testing...' : 'Test Connection'}
+              </button>
+            </div>
+            {match13TestResult && (
+              <div
+                className={`text-[11px] px-2.5 py-1.5 rounded-lg font-mono flex items-center gap-2 ${
+                  match13TestResult.success
+                    ? 'bg-emerald-950/40 border border-emerald-800 text-emerald-300'
+                    : 'bg-amber-950/40 border border-amber-800 text-amber-300'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${match13TestResult.success ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+                <span>{match13TestResult.message}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Footer Actions */}
         <div className="p-4 sm:p-5 border-t border-zinc-800/80 bg-zinc-900/30 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 text-center sm:text-left">
-            <Layers size={13} className="text-zinc-500 shrink-0" />
-            <span>Accessible anytime via <strong>Setup</strong> in the top bar.</span>
+          <div className="text-[11px] text-zinc-400 flex items-center gap-2 text-center sm:text-left flex-wrap">
+            <span className="flex items-center gap-1.5">
+              <Layers size={13} className="text-zinc-500 shrink-0" />
+              <span>Accessible anytime via <strong>Setup</strong> in the top bar.</span>
+            </span>
+            <span className="text-zinc-600 hidden sm:inline">•</span>
+            <button
+              type="button"
+              onClick={() => {
+                handleDismiss();
+                Actions.setArchitectureModalOpen(true);
+              }}
+              className="text-amber-400 hover:text-amber-300 font-semibold hover:underline cursor-pointer"
+            >
+              Architecture & Code Map
+            </button>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">

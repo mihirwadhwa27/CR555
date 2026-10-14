@@ -4,15 +4,17 @@
  */
 
 import React, { useEffect } from 'react';
-import { RefreshCw, Sliders, Palette, Maximize2 } from 'lucide-react';
+import { RefreshCw, Sliders, Palette, Maximize2, Layers, Smartphone } from 'lucide-react';
 import { usePitState, pitStore, Actions, Selectors } from './store';
 import { NavigationTab } from './types';
 import { ThemeService } from './services';
+import { formatTimeAgo } from './utils/matchUtils';
 
 import { TopNav } from './components/TopNav';
 import { ThemeModal } from './components/ThemeModal';
 import { StrategyConfirmationModal } from './components/StrategyConfirmationModal';
 import { PulseSetupModal } from './components/PulseSetupModal';
+import { ArchitectureModal } from './components/ArchitectureModal';
 import { CrLogo } from './components/CrLogo';
 
 import { DashboardView } from './views/DashboardView';
@@ -28,10 +30,14 @@ export default function App() {
   const currentTab = usePitState(Selectors.currentTab);
   const theme = usePitState(Selectors.themeConfig);
   const isStrategyUnlocked = usePitState(Selectors.isStrategyUnlocked);
+  const isArchitectureModalOpen = usePitState(Selectors.isArchitectureModalOpen);
   const teamInfo = usePitState(Selectors.teamInfo);
   const activeEvent = usePitState(Selectors.activeEvent);
   const demoMode = usePitState(Selectors.demoMode);
   const customLogoUrl = usePitState(Selectors.customLogoUrl);
+  const isVerticalMode = usePitState(Selectors.isVerticalMode);
+  const lastSyncedAt = usePitState(Selectors.lastSyncedAt);
+  const dataFreshness = usePitState(Selectors.dataFreshness);
 
   // Apply theme tokens, background/foreground colors, and font family reactively across the whole DOM
   useEffect(() => {
@@ -192,13 +198,48 @@ export default function App() {
           )}
         </div>
 
-        <div className="flex items-center gap-4 text-xs">
-          <div className="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px]">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>Connected</span>
+        <div className="flex items-center gap-3 sm:gap-4 text-xs">
+          {/* Subtle Time-Ago Data Freshness Indicator */}
+          <div
+            className="flex items-center gap-1.5 font-mono text-[11px] cursor-pointer hover:opacity-80 transition-opacity"
+            onClick={() => Actions.pullTheBlueAlliance()}
+            title={`Data source: ${dataFreshness === 'live' ? 'Live connected' : 'Local verified cache'}. Click to re-sync.`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                dataFreshness === 'live'
+                  ? 'bg-emerald-400 animate-pulse'
+                  : dataFreshness === 'cached'
+                  ? 'bg-amber-400'
+                  : 'bg-zinc-500'
+              }`}
+            />
+            <span
+              className={
+                dataFreshness === 'live'
+                  ? 'text-emerald-400 font-semibold'
+                  : dataFreshness === 'cached'
+                  ? 'text-amber-300'
+                  : 'text-zinc-400'
+              }
+            >
+              {dataFreshness === 'live'
+                ? `Live · Synced ${formatTimeAgo(lastSyncedAt)}`
+                : `Cached · ${formatTimeAgo(lastSyncedAt)}`}
+            </span>
           </div>
 
           <div className="flex items-center gap-1 text-zinc-400">
+            {/* Direct Vertical HUD Toggle */}
+            <button
+              onClick={() => Actions.toggleVerticalMode()}
+              className={`p-1 rounded transition-colors cursor-pointer ${
+                isVerticalMode ? 'text-amber-400 bg-amber-500/10' : 'hover:bg-zinc-800 hover:text-white'
+              }`}
+              title={isVerticalMode ? 'Switch to Standard Wide Layout' : 'Switch to Vertical Pit Display HUD'}
+            >
+              <Smartphone size={13} />
+            </button>
             <button
               onClick={() => Actions.setSetupModalOpen(true)}
               className="p-1 rounded hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer text-emerald-400"
@@ -209,7 +250,7 @@ export default function App() {
             <button
               onClick={() => Actions.pullTheBlueAlliance()}
               className="p-1 rounded hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer"
-              title="Refresh / Sync The Blue Alliance"
+              title="Force Sync The Blue Alliance"
             >
               <RefreshCw size={13} />
             </button>
@@ -219,6 +260,13 @@ export default function App() {
               title="Pit Controller Console"
             >
               <Sliders size={13} />
+            </button>
+            <button
+              onClick={() => Actions.setArchitectureModalOpen(true)}
+              className="p-1 rounded hover:bg-zinc-800 hover:text-amber-400 transition-colors cursor-pointer text-zinc-400"
+              title="Architecture & Code Map"
+            >
+              <Layers size={13} />
             </button>
             <button
               onClick={() => Actions.setThemeModalOpen(true)}
@@ -240,6 +288,10 @@ export default function App() {
 
       {/* Modals */}
       <PulseSetupModal />
+      <ArchitectureModal
+        isOpen={isArchitectureModalOpen}
+        onClose={() => Actions.setArchitectureModalOpen(false)}
+      />
       <ThemeModal />
       <StrategyConfirmationModal />
     </div>
